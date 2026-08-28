@@ -1,0 +1,50 @@
+name: dotnet — build and test
+
+# Scoped to dotnet/ so a Python or Go commit does not run the .NET matrix, and
+# so a future python-build.yml can be added without either one becoming the
+# workflow that "runs on everything". spec/ and conformance/ are in the paths
+# because a payload the tests read is an input to this build (phase 7 D5).
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'dotnet/**'
+      - 'spec/**'
+      - 'conformance/**'
+      - '.github/workflows/dotnet-build.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'dotnet/**'
+      - 'spec/**'
+      - 'conformance/**'
+      - '.github/workflows/dotnet-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        dotnet-version: [ '9.0.x', '10.0.x' ]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET ${{ matrix.dotnet-version }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ matrix.dotnet-version }}
+
+      - name: Restore
+        run: dotnet restore dotnet/InferHub.Client.sln
+
+      - name: Format check
+        run: dotnet format dotnet/InferHub.Client.sln --verify-no-changes
+
+      - name: Build
+        run: dotnet build dotnet/InferHub.Client.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test dotnet/InferHub.Client.sln --configuration Release --no-build

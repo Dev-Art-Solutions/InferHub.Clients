@@ -1,7 +1,12 @@
 version: 2
 updates:
+  # One entry per language directory. `directory: "/"` scanned the whole tree
+  # and worked while there was one package here; it would open a NuGet PR
+  # against a Python folder the day one exists. A new language gets an entry
+  # in the phase that creates it, not before — an ecosystem pointed at an empty
+  # folder is a weekly job that finds nothing and a config nobody trusts.
   - package-ecosystem: nuget
-    directory: "/"
+    directory: "/dotnet"
     schedule:
       interval: weekly
 

@@ -1,0 +1,55 @@
+name: dotnet — release
+
+# Tags are <lang>/vX.Y.Z (7 D2). Not a house preference: a Go module in a
+# subdirectory resolves only from a tag prefixed with that subdirectory, so the
+# scheme Go forces is the one every language uses.
+#
+# The bare 'v*' trigger is deliberately gone. The seven v0.1.0–v1.0.0 tags are
+# the C# client's history and stay where they are, but leaving the trigger would
+# mean a future 'v1.1.0' typo packs from paths that no longer exist — and pushes
+# whatever it managed to build.
+on:
+  push:
+    tags:
+      - 'dotnet/v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: Action
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#dotnet/v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore dotnet/src/InferHub.Client/InferHub.Client.csproj
+
+      - name: Build
+        run: dotnet build dotnet/src/InferHub.Client/InferHub.Client.csproj --configuration Release --no-restore /p:Version=${{ steps.version.outputs.version }}
+
+      - name: Pack
+        run: dotnet pack dotnet/src/InferHub.Client/InferHub.Client.csproj --configuration Release --no-build --output ./nupkgs /p:Version=${{ steps.version.outputs.version }}
+
+      - name: Push to NuGet
+        run: dotnet nuget push "./nupkgs/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./nupkgs/*.nupkg
+          generate_release_notes: true

@@ -1,8 +1,15 @@
 # ---------------------------------------------------------------------------
-# Internal build plan — task briefs for Claude Code, not part of the public
-# repository. Keep it local.
+# Internal build briefs — not part of the public repository. Keep them local.
+#
+# plans/CLAUDE.md is the one exception: it is the *format* rather than a brief,
+# and the root CLAUDE.md points at it, so a fresh clone that lacked it would
+# teach a reader the context does not exist rather than that it is local.
+#
+# The `/plans/*` form is required, not cosmetic — git does not descend into an
+# excluded *directory*, so `plans/` followed by a negation matches nothing.
 # ---------------------------------------------------------------------------
-plans/
+/plans/*
+!/plans/CLAUDE.md
 
 # ---------------------------------------------------------------------------
 # .NET / Visual Studio

@@ -2,11 +2,15 @@
 
 [![NuGet](https://img.shields.io/nuget/v/InferHub.Client.svg)](https://www.nuget.org/packages/InferHub.Client/)
 [![NuGet downloads](https://img.shields.io/nuget/dt/InferHub.Client.svg)](https://www.nuget.org/packages/InferHub.Client/)
-[![build and test](https://github.com/Dev-Art-Solutions/InferHub.Client/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/Dev-Art-Solutions/InferHub.Client/actions/workflows/build-and-test.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![build and test](https://github.com/Dev-Art-Solutions/InferHub.Clients/actions/workflows/dotnet-build.yml/badge.svg)](https://github.com/Dev-Art-Solutions/InferHub.Clients/actions/workflows/dotnet-build.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
 
 A small, typed .NET client for [InferHub](https://github.com/Dev-Art-Solutions/InferHub) —
 a self-hosted, Ollama-compatible inference mesh.
+
+**The C# client of [InferHub.Clients](https://github.com/Dev-Art-Solutions/InferHub.Clients)**,
+which is one repository holding a client per language against one hub surface. Python,
+TypeScript and Go are planned; see the repository README for what each covers today.
 
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
@@ -296,14 +300,21 @@ From 1.0.0 the client follows [Semantic Versioning](https://semver.org):
 
 New capabilities land as overloads (as the per-call RAG options did), so existing call sites
 keep compiling across the whole `1.x` line. Client versions stay independent of the
-coordinator's; `1.0.0` targets the coordinator's `v2.x` HTTP surface.
+coordinator's; `1.0.x` targets the coordinator's `v2.x` HTTP surface, and the surface the
+coordinator has grown since — audio, images, video, cloud providers, ingestion, and a node that
+serves its own API — is being added additively across the `1.x` line.
+
+Tags in this repository are `<lang>/vX.Y.Z`, so this package's releases are `dotnet/v1.0.1`
+and onwards. The bare `v0.1.0`–`v1.0.0` tags are this client's history from before the
+repository held more than one language.
 
 ## Links
 
+- This repository: <https://github.com/Dev-Art-Solutions/InferHub.Clients>
 - InferHub server: <https://github.com/Dev-Art-Solutions/InferHub>
 - Product page: <https://inferhub.devart.solutions>
 - Blog: <https://blog.devart.solutions>
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](../LICENSE).

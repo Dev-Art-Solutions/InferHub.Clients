@@ -12,12 +12,12 @@
     <Description>.NET client library for InferHub — a self-hosted, Ollama-compatible LLM inference mesh. Typed requests over HTTP, dependency-injection friendly, small surface. Point it at a coordinator and call chat, generate (blocking + streaming), embeddings, the vector data-plane (upsert/query/retrieve), opt-in RAG retrieval (grounded chat/generate with source ids), model listing and status from C#. The separate admin client covers fleet ops (list/cordon/drain/uncordon/deregister nodes), vector collection lifecycle (create/drop/rebuild) and the live admin event stream (SSE with reconnect).</Description>
     <PackageIcon>icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/Dev-Art-Solutions/InferHub.Client</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/Dev-Art-Solutions/InferHub.Client</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Dev-Art-Solutions/InferHub.Clients</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Dev-Art-Solutions/InferHub.Clients</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageTags>inferhub;ollama;llm;ai;client;sdk;dotnet;rag</PackageTags>
-    <PackageVersion>1.0.0</PackageVersion>
+    <PackageVersion>1.0.1</PackageVersion>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
@@ -25,8 +25,14 @@
     <WarningsAsErrors>CS1591</WarningsAsErrors>
   </PropertyGroup>
 
+  <!--
+    LICENSE and icon.png are repository-level and shared by every client package, so they sit at
+    the root (three levels up); README.md is this package's own and sits in dotnet/. The readme
+    shipped in the .nupkg used to be the repository README, which stopped being a document about
+    a C# client the day this repository grew four of them.
+  -->
   <ItemGroup>
-    <None Include="..\..\LICENSE">
+    <None Include="..\..\..\LICENSE">
       <Pack>true</Pack>
       <PackagePath>\</PackagePath>
     </None>
@@ -34,7 +40,7 @@
       <Pack>true</Pack>
       <PackagePath>\</PackagePath>
     </None>
-    <None Include="..\..\icon.png">
+    <None Include="..\..\..\icon.png">
       <Pack>true</Pack>
       <PackagePath>\</PackagePath>
     </None>
