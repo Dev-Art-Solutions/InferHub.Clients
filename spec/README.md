@@ -97,6 +97,20 @@ a schema.
   model tokenized nothing. A client that treats zero as "missing" reports the wrong thing.
 - **An absent count stays absent.** A zero constructed to fill a field is not a measurement, and the
   hub is careful about this in both directions.
+- **The two dialects fail in two envelopes.** `/api/*` answers `{"error":"…"}`; `/v1/*` answers
+  `{"error":{"message":…,"type":…,"param":…,"code":…}}`, because an OpenAI SDK reads
+  `error.message` to build the exception it raises. A client that only knows the first surfaces the
+  whole JSON body as its message — recorded from 3.37.0, both shapes, for the *same* refused steer.
+- **`error.code` is a string or a number.** This project writes `"model_not_found"`; an upstream
+  passed through writes `429`. The hub reads both (62) and so must a client.
+- **`code` can be `null` on a real error.** The refused-steer `400` carries `param: "model"` and
+  `code: null` — a client that treats a missing code as "not an OpenAI envelope" loses the message.
+- **A streamed `/v1` frame with an empty `choices` array is the usage frame**, and it is the only
+  place a streamed call reports token counts (`stream_options.include_usage`). A client that skips
+  frames with no choices reports "usage: not available" for every stream.
+- **`data: [DONE]` is not JSON.** It ends the stream; deserializing it throws. And a stream that
+  ends *without* it is a node that dropped: the hub already sent a terminal frame with
+  `finish_reason: "stop"`, so the honest client keeps the partial answer rather than raising.
 
 ## `payloads/`
 

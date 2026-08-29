@@ -65,4 +65,13 @@ public sealed class GenerateResponse
     /// </summary>
     [JsonIgnore]
     public IReadOnlyList<string>? SourceIds { get; set; }
+
+    /// <summary>
+    /// Which node or provider answered, from the <c>X-InferHub-Served-By</c> response header —
+    /// a node id, or <c>provider:&lt;id&gt;</c> for a vendor-served answer. <c>null</c> when the
+    /// hub sent no header. Reported, never interpreted: this library never routes, retries
+    /// elsewhere or prefers on it. Not part of the JSON body.
+    /// </summary>
+    [JsonIgnore]
+    public string? ServedBy { get; set; }
 }

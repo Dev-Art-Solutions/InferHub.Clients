@@ -15,6 +15,12 @@ TypeScript and Go are planned; see the repository README for what each covers to
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
 
+> **v1.1.0** — the hub's **second dialect** and the **provider steer**: `IInferHubOpenAiClient`
+> covers `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings` and `/v1/models`, and every
+> call in either dialect can say which vendor may see the prompt (`X-InferHub-Provider`) and read
+> back which node or provider answered (`X-InferHub-Served-By`). Additive: nothing in 1.0 changed.
+> See [The OpenAI dialect](#the-openai-dialect) and [Steering a request](#steering-a-request).
+
 > **v1.0.0** — the full mesh surface from one small package: blocking + streaming inference,
 > embeddings (batch + legacy), the vector data plane (upsert / query / retrieve / get / delete),
 > opt-in RAG retrieval (grounded chat/generate with source ids), and the admin client (fleet
@@ -83,7 +89,20 @@ Console.WriteLine(chat.Message?.Content);
 | `PingAsync` | `GET /health` |
 
 Chat/generate (blocking and streaming) also take an optional `InferHubCallOptions` for
-per-call RAG retrieval and sticky conversation routing — see [RAG retrieval](#rag-retrieval).
+per-call RAG retrieval, sticky conversation routing and the provider steer — see
+[RAG retrieval](#rag-retrieval) and [Steering a request](#steering-a-request).
+
+`IInferHubOpenAiClient` (client key — the same key, the same base address):
+
+| Method | Endpoint |
+|---|---|
+| `CreateChatCompletionAsync` | `POST /v1/chat/completions` with `stream:false` |
+| `StreamChatCompletionAsync` | `POST /v1/chat/completions` with `stream:true` (SSE → `IAsyncEnumerable<ChatCompletionChunk>`) |
+| `CreateCompletionAsync` | `POST /v1/completions` with `stream:false` |
+| `StreamCompletionAsync` | `POST /v1/completions` with `stream:true` (SSE → `IAsyncEnumerable<CompletionResponse>`) |
+| `CreateEmbeddingsAsync` | `POST /v1/embeddings` (`float` or `base64`, decoded by `AsFloats()`) |
+| `ListModelsAsync` | `GET /v1/models` (with the hub's `capabilities` extension) |
+| `GetModelAsync` | `GET /v1/models/{id}` (→ `null` on 404) |
 
 `IInferHubAdminClient` (admin key):
 
@@ -198,6 +217,54 @@ Console.WriteLine(string.Join(", ", grounded.SourceIds ?? []));  // retrieved re
 with `OnMissing=error`, the call throws `InferHubRetrievalException` (a `424`). Calls
 without options behave exactly as before. See `samples/GroundedChat`.
 
+### The OpenAI dialect
+
+The hub serves `/v1/*` alongside its Ollama surface — same models, same fleet, same key — for
+callers whose prompts, tools and logging were written against that shape:
+
+```csharp
+var openAi = provider.GetRequiredService<IInferHubOpenAiClient>();
+
+await foreach (var chunk in openAi.StreamChatCompletionAsync(new ChatCompletionRequest
+{
+    Model = "llama3",
+    Messages = new[] { ChatCompletionMessage.User("Two sentences on inference meshes.") },
+    StreamOptions = new ChatCompletionStreamOptions { IncludeUsage = true }
+}))
+{
+    if (chunk.Usage is { } usage)                      // the usage frame has NO choices;
+    {                                                  // it is the only place a streamed
+        Console.WriteLine(usage.TotalTokens);          // call reports token counts
+        continue;
+    }
+
+    Console.Write(chunk.Choices.FirstOrDefault()?.Delta?.Content);
+}
+```
+
+Failures arrive in that dialect's envelope (`{"error":{"message":…,"type":…,"code":…}}`) and
+surface as `InferHubOpenAiException`, which carries `ErrorType`, `ErrorCode` and `Param`.
+Embeddings come back as a float array or a base64 string depending on `EncodingFormat`;
+`AsFloats()` decodes either. See `samples/OpenAiDialect`.
+
+### Steering a request
+
+`X-InferHub-Provider` says where a prompt may go, and it works in **both** dialects:
+
+```csharp
+await client.ChatAsync(request, InferHubCallOptions.ForFleetOnly());        // no vendor sees it
+await client.ChatAsync(request, InferHubCallOptions.ForProvider("openai")); // this one, or 400
+```
+
+A steer can only ever **narrow** what the hub's operator already configured: it cannot create a
+route, and a provider that does not serve the model is refused with a `400` rather than quietly
+replaced. `ForFleetOnly()` works on a hub with four providers and on a hub with none.
+
+Every inference answer carries `ServedBy` — a node id, or `provider:<id>` — read from
+`X-InferHub-Served-By` and `null` when the hub sent no header. On a stream it is stamped on
+every chunk. **The client reports it and never acts on it**: it does not route, retry elsewhere
+or prefer, because re-sending a prompt to a second address is a second disclosure of it.
+
 ### Fleet + vector admin
 
 Everything under `/api/admin/*` lives on `IInferHubAdminClient`, registered by the same
@@ -248,7 +315,12 @@ Any non-success HTTP response is surfaced as `InferHubException`, carrying:
 
 The client treats `404` (model or collection missing) as a signal worth checking with
 `StatusCode`, and `424 Failed Dependency` (retrieval unavailable) gets its own subtype,
-`InferHubRetrievalException`.
+`InferHubRetrievalException` — in **both** dialects, because it is one condition and a caller
+should not have to catch it twice.
+
+A `/v1/*` failure arrives in the OpenAI envelope instead and gets `InferHubOpenAiException`,
+which adds `ErrorType`, `ErrorCode` and `Param`. `ErrorCode` is always a string: an upstream
+passed through by the hub may write it as a JSON number, and both are read.
 
 ## Resilience
 

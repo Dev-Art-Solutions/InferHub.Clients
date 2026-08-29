@@ -4,13 +4,17 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace InferHub.Client.Extensions;
 
-/// <summary>DI wiring for <see cref="IInferHubClient"/> and <see cref="IInferHubAdminClient"/>.</summary>
+/// <summary>
+/// DI wiring for <see cref="IInferHubClient"/>, <see cref="IInferHubOpenAiClient"/> and
+/// <see cref="IInferHubAdminClient"/>.
+/// </summary>
 public static class InferHubClientServiceCollectionExtensions
 {
     /// <summary>
-    /// Register <see cref="IInferHubClient"/> and <see cref="IInferHubAdminClient"/>, each
-    /// with its own typed <see cref="HttpClient"/> and bearer-auth <see cref="DelegatingHandler"/>.
-    /// The client sends <see cref="InferHubClientOptions.ApiKey"/>; the admin client sends
+    /// Register <see cref="IInferHubClient"/>, <see cref="IInferHubOpenAiClient"/> and
+    /// <see cref="IInferHubAdminClient"/>, each with its own typed <see cref="HttpClient"/> and
+    /// bearer-auth <see cref="DelegatingHandler"/>. The inference clients send
+    /// <see cref="InferHubClientOptions.ApiKey"/>; the admin client sends
     /// <see cref="InferHubClientOptions.AdminApiKey"/> and its <see cref="HttpClient"/> has
     /// no overall timeout (the SSE admin stream is long-lived) —
     /// <see cref="InferHubClientOptions.Timeout"/> is applied per non-streaming admin call.
@@ -40,6 +44,16 @@ public static class InferHubClientServiceCollectionExtensions
         // request still runs through auth; auth only adds the header when absent, so a resend
         // never double-stamps it.
         services.AddHttpClient<IInferHubClient, InferHubClient>(client =>
+        {
+            client.BaseAddress = EnsureTrailingSlash(options.BaseAddress);
+            client.Timeout = options.Timeout;
+        })
+        .AddHttpMessageHandler<TransientRetryHandler>()
+        .AddHttpMessageHandler<BearerAuthorizationHandler>();
+
+        // The second dialect is the same hub, the same address and the same client key — so it
+        // shares the options and the handler chain, and differs only in the paths it posts to.
+        services.AddHttpClient<IInferHubOpenAiClient, InferHubOpenAiClient>(client =>
         {
             client.BaseAddress = EnsureTrailingSlash(options.BaseAddress);
             client.Timeout = options.Timeout;

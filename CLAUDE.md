@@ -29,7 +29,7 @@ plans/          build briefs. Gitignored except plans/CLAUDE.md, which is the fo
 ## Build / test / run
 
 ```powershell
-dotnet test dotnet/InferHub.Client.sln                 # 79 per TFM: 76 pass, 3 skip (env-gated integration)
+dotnet test dotnet/InferHub.Client.sln                 # 104 per TFM: 101 pass, 3 skip (env-gated integration)
 dotnet format dotnet/InferHub.Client.sln --verify-no-changes
 dotnet run --project dotnet/samples/BasicChat          # needs a coordinator on :5080
 ```
@@ -80,6 +80,15 @@ week. The bare `v0.1.0`–`v1.0.0` tags are the C# client's history and stay whe
 8. **`X-InferHub-Served-By` is surfaced, never interpreted.** A client reports which node or provider
    answered. It does not route, retry elsewhere, or prefer — deciding to re-send a prompt to a second
    address is a second disclosure of the same prompt.
+9. **One dialect, one interface; one envelope, one exception.** The hub speaks two client dialects
+   and a client models each in its own interface rather than by growing a published one
+   (`IInferHubOpenAiClient` alongside `IInferHubClient` — adding a member to a 1.0 interface breaks
+   every implementer, which is rule 3 by another route). They also **fail** differently:
+   `/api/*` answers `{"error":"…"}`, `/v1/*` answers `{"error":{"message":…,"type":…}}`, and which
+   envelope arrived decides the exception type — never which method was called. The exception is
+   `424`: retrieval-unavailable is one condition in both dialects and keeps one exception type.
+   Per-call *headers* stay shared (`InferHubCallOptions`), because the hub reads the same ones on
+   both surfaces and a caller should not switch dialects to keep a prompt off a vendor's servers.
 
 ## Testing discipline
 

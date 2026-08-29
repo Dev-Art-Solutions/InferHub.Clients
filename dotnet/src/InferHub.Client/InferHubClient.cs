@@ -40,6 +40,7 @@ public sealed class InferHubClient : IInferHubClient
         return await PostForResultAsync(
             "api/chat", request, Json.ChatRequest, Json.ChatResponse, options,
             static (r, sources) => r.SourceIds = sources,
+            static (r, servedBy) => r.ServedBy = servedBy,
             cancellationToken);
     }
 
@@ -54,6 +55,7 @@ public sealed class InferHubClient : IInferHubClient
         return await PostForResultAsync(
             "api/generate", request, Json.GenerateRequest, Json.GenerateResponse, options,
             static (r, sources) => r.SourceIds = sources,
+            static (r, servedBy) => r.ServedBy = servedBy,
             cancellationToken);
     }
 
@@ -72,6 +74,7 @@ public sealed class InferHubClient : IInferHubClient
             Json.ChatResponse,
             static chunk => (chunk.Done == true, chunk.Error),
             static (chunk, sources) => chunk.SourceIds = sources,
+            static (chunk, servedBy) => chunk.ServedBy = servedBy,
             options,
             cancellationToken);
     }
@@ -91,6 +94,7 @@ public sealed class InferHubClient : IInferHubClient
             Json.GenerateResponse,
             static chunk => (chunk.Done == true, chunk.Error),
             static (chunk, sources) => chunk.SourceIds = sources,
+            static (chunk, servedBy) => chunk.ServedBy = servedBy,
             options,
             cancellationToken);
     }
@@ -223,6 +227,7 @@ public sealed class InferHubClient : IInferHubClient
         JsonTypeInfo<TResult> resultInfo,
         InferHubCallOptions? options,
         Action<TResult, IReadOnlyList<string>?> setSources,
+        Action<TResult, string?> setServedBy,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, path)
@@ -237,6 +242,7 @@ public sealed class InferHubClient : IInferHubClient
         var result = await response.Content.ReadFromJsonAsync(resultInfo, cancellationToken)
             ?? throw new InferHubException(response.StatusCode, "empty response body", string.Empty);
         setSources(result, ParseSourceIds(response));
+        setServedBy(result, Http.InferHubHeaders.ReadServedBy(response));
         return result;
     }
 
@@ -247,6 +253,7 @@ public sealed class InferHubClient : IInferHubClient
         JsonTypeInfo<TChunk> chunkInfo,
         Func<TChunk, (bool Done, string? Error)> inspect,
         Action<TChunk, IReadOnlyList<string>?> setSources,
+        Action<TChunk, string?> setServedBy,
         InferHubCallOptions? options,
         [EnumeratorCancellation] CancellationToken cancellationToken)
         where TChunk : class
@@ -260,6 +267,7 @@ public sealed class InferHubClient : IInferHubClient
         await EnsureSuccessAsync(response, cancellationToken);
 
         var sources = ParseSourceIds(response);
+        var servedBy = Http.InferHubHeaders.ReadServedBy(response);
 
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream);
@@ -300,6 +308,7 @@ public sealed class InferHubClient : IInferHubClient
             }
 
             setSources(chunk, sources);
+            setServedBy(chunk, servedBy);
             yield return chunk;
 
             if (done)
@@ -313,79 +322,9 @@ public sealed class InferHubClient : IInferHubClient
         => Http.InferHubResponse.EnsureSuccessAsync(response, cancellationToken);
 
     private static void ApplyCallHeaders(HttpRequestMessage request, InferHubCallOptions? options)
-    {
-        if (options is null)
-        {
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(options.ConversationId))
-        {
-            request.Headers.TryAddWithoutValidation("X-InferHub-Conversation", options.ConversationId);
-        }
-
-        var retrieval = options.Retrieval;
-        if (retrieval is null)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(retrieval.Collection))
-        {
-            throw new ArgumentException("RetrievalOptions.Collection is required.", nameof(options));
-        }
-
-        request.Headers.TryAddWithoutValidation("X-InferHub-Retrieve", retrieval.Collection);
-
-        if (retrieval.K is int k)
-        {
-            request.Headers.TryAddWithoutValidation("X-InferHub-Retrieve-K", k.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        }
-
-        if (!string.IsNullOrWhiteSpace(retrieval.Model))
-        {
-            request.Headers.TryAddWithoutValidation("X-InferHub-Retrieve-Model", retrieval.Model);
-        }
-    }
+        => Http.InferHubHeaders.Apply(request, options);
 
     private static IReadOnlyList<string>? ParseSourceIds(HttpResponseMessage response)
-    {
-        if (!response.Headers.TryGetValues("X-InferHub-Sources", out var values))
-        {
-            return null;
-        }
-
-        var raw = string.Concat(values).Trim();
-        if (raw.Length == 0)
-        {
-            return Array.Empty<string>();
-        }
-
-        // The coordinator echoes a JSON array: X-InferHub-Sources: ["id", "id2"].
-        try
-        {
-            using var doc = JsonDocument.Parse(raw);
-            if (doc.RootElement.ValueKind == JsonValueKind.Array)
-            {
-                var ids = new List<string>(doc.RootElement.GetArrayLength());
-                foreach (var element in doc.RootElement.EnumerateArray())
-                {
-                    var id = element.ValueKind == JsonValueKind.String ? element.GetString() : element.GetRawText();
-                    if (!string.IsNullOrEmpty(id))
-                    {
-                        ids.Add(id);
-                    }
-                }
-
-                return ids;
-            }
-        }
-        catch (JsonException)
-        {
-            // Not a JSON array — fall back to a comma-separated list.
-        }
-
-        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    }
+        => Http.InferHubHeaders.ParseSourceIds(response);
 
 }

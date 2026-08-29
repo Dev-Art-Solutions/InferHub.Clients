@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using InferHub.Client.Models;
 using InferHub.Client.Models.Admin;
 using InferHub.Client.Models.Ollama;
+using InferHub.Client.Models.OpenAi;
 using InferHub.Client.Models.Vector;
 
 namespace InferHub.Client.Serialization;
@@ -44,6 +45,15 @@ namespace InferHub.Client.Serialization;
 [JsonSerializable(typeof(CreateCollectionRequest))]
 [JsonSerializable(typeof(AdminSnapshotPayload))]
 [JsonSerializable(typeof(AdminVectorEventPayload))]
+[JsonSerializable(typeof(ChatCompletionRequest))]
+[JsonSerializable(typeof(ChatCompletionResponse))]
+[JsonSerializable(typeof(ChatCompletionChunk))]
+[JsonSerializable(typeof(CompletionRequest))]
+[JsonSerializable(typeof(CompletionResponse))]
+[JsonSerializable(typeof(OpenAiEmbeddingsRequest))]
+[JsonSerializable(typeof(OpenAiEmbeddingsResponse))]
+[JsonSerializable(typeof(OpenAiModel))]
+[JsonSerializable(typeof(OpenAiModelList))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(string[]))]
 internal sealed partial class InferHubJsonContext : JsonSerializerContext

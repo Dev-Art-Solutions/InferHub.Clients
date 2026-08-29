@@ -677,4 +677,81 @@ public class InferHubClientTests
 
         Assert.Null(handler.Requests[0].Headers.Authorization);
     }
+
+    [Fact]
+    public async Task ChatAsync_sends_the_provider_steer_and_surfaces_served_by()
+    {
+        const string body = """{"model":"gemma:2b","message":{"role":"assistant","content":"hi"},"done":true}""";
+        var (client, handler) = CreateClient(HttpStatusCode.OK, body);
+        handler.ResponseHeaders["X-InferHub-Served-By"] = "node";
+
+        var response = await client.ChatAsync(
+            new ChatRequest { Model = "gemma:2b" },
+            InferHubCallOptions.ForProvider("openrouter"));
+
+        Assert.Equal("openrouter", handler.Requests[0].Headers.GetValues("X-InferHub-Provider").Single());
+        Assert.Equal("node", response.ServedBy);
+    }
+
+    [Fact]
+    public async Task ChatAsync_keeps_the_prompt_on_the_fleet_when_asked()
+    {
+        const string body = """{"model":"gemma:2b","message":{"role":"assistant","content":"hi"},"done":true}""";
+        var (client, handler) = CreateClient(HttpStatusCode.OK, body);
+
+        await client.ChatAsync(new ChatRequest { Model = "gemma:2b" }, InferHubCallOptions.ForFleetOnly());
+
+        Assert.Equal("node", handler.Requests[0].Headers.GetValues("X-InferHub-Provider").Single());
+    }
+
+    [Fact]
+    public async Task GenerateAsync_rejects_a_steer_that_says_two_things_at_once()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """{"model":"gemma:2b","response":"hi","done":true}""");
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.GenerateAsync(
+                new GenerateRequest { Model = "gemma:2b" },
+                new InferHubCallOptions { Provider = "openrouter", FleetOnly = true }));
+
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task A_refused_steer_on_the_ollama_surface_stays_a_plain_InferHubException()
+    {
+        // Same refusal, the other dialect's envelope: /api/chat answers { "error": "..." }, so the
+        // OpenAI-specific type must not appear here.
+        const string body = """{"error":"no provider 'openrouter' serves model 'gemma:2b' on this hub."}""";
+        var (client, _) = CreateClient(HttpStatusCode.BadRequest, body);
+
+        var ex = await Assert.ThrowsAsync<InferHubException>(
+            () => client.ChatAsync(new ChatRequest { Model = "gemma:2b" }, InferHubCallOptions.ForProvider("openrouter")));
+
+        Assert.IsNotType<InferHubOpenAiException>(ex);
+        Assert.StartsWith("no provider 'openrouter'", ex.Message);
+    }
+
+    [Fact]
+    public async Task ChatStreamAsync_stamps_served_by_on_every_chunk()
+    {
+        var handler = new StreamingHttpMessageHandler();
+        handler.ResponseHeaders["X-InferHub-Served-By"] = "provider:openrouter";
+        var http = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5080/") };
+        var client = new InferHubClient(http);
+
+        handler.EnqueueLine("""{"model":"gemma:2b","message":{"role":"assistant","content":"hi"},"done":false}""");
+        handler.EnqueueLine("""{"model":"gemma:2b","message":{"role":"assistant","content":"!"},"done":true}""");
+        handler.Complete();
+
+        var servedBy = new List<string?>();
+        await foreach (var chunk in client.ChatStreamAsync(new ChatRequest { Model = "gemma:2b" }))
+        {
+            servedBy.Add(chunk.ServedBy);
+        }
+
+        // Surfaced, never interpreted: the client reports the vendor and does nothing about it.
+        Assert.Equal(2, servedBy.Count);
+        Assert.All(servedBy, value => Assert.Equal("provider:openrouter", value));
+    }
 }
