@@ -126,11 +126,25 @@ This is the important section this time.
   the day — InferHub 3.37.0, one node — serves `chat` and `embed` with `tools.enabled=false`, so
   there was no `transcribe` or `speak` node to reach. Nothing is claimed here about audio quality,
   sample rates in practice, first-chunk latency, or how a real worker chunks a sentence.
-- **What *was* driven against that live hub:** `dotnet/samples/Speech`, both halves. The multipart
-  body this client builds and the speech JSON it posts were both accepted — each request got past
-  the hub's validation as far as routing, and was refused there for want of a node, with the `503`
-  and `capability_unavailable` arriving as the typed exception the sample prints. So the request
-  shapes and the failure path are established end to end; only the answer is not.
+- **What *was* driven against that live hub — from the published package, not the working copy.**
+  `dotnet add package InferHub.Client --version 1.2.0` into a clean directory pinned to nuget.org,
+  then seven checks against InferHub 3.37.0:
+
+  | | result |
+  |---|---|
+  | `IInferHubAudioClient` from DI **and** from its public constructor | resolves |
+  | `StreamSpeechAsync` | `503 api_error / capability_unavailable` |
+  | `CreateSpeechAsync` | `503 api_error / capability_unavailable` |
+  | `TranscribeAsync` — the multipart body this client builds | `503 … 'transcribe'` |
+  | speech, unknown model | `404 not_found_error / model_not_found` |
+  | speech, `response_format: "aiff"` | `400`, `param=input`, `code=null`, the list of what it can do |
+  | **streamed chat on the 1.1 surface** | *"Hello! How may I assist you today?"*, `ServedBy: node`, 38 tokens |
+
+  Reaching *routing* is the part that matters for the two audio routes: it means the real hub
+  parsed the multipart form and read `model` out of it, so **the request shapes and the whole
+  failure path are established end to end** — only the answer is not. The last row is the
+  regression check the shared-SSE-reader refactor needed, and it is a real streamed answer with a
+  real usage frame.
 - **Every *refusal* in the test suite is recorded from that live hub** — eleven of them: both
   `capability_unavailable` `503`s (transcribe and speak), the `model_not_found` `404`, the two
   unsupported-`response_format` `400`s with their differing `param`, the un-streamable-format `400`,
