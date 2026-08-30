@@ -29,7 +29,7 @@ plans/          build briefs. Gitignored except plans/CLAUDE.md, which is the fo
 ## Build / test / run
 
 ```powershell
-dotnet test dotnet/InferHub.Client.sln                 # 104 per TFM: 101 pass, 3 skip (env-gated integration)
+dotnet test dotnet/InferHub.Client.sln                 # 125 per TFM: 122 pass, 3 skip (env-gated integration)
 dotnet format dotnet/InferHub.Client.sln --verify-no-changes
 dotnet run --project dotnet/samples/BasicChat          # needs a coordinator on :5080
 ```
@@ -80,10 +80,13 @@ week. The bare `v0.1.0`–`v1.0.0` tags are the C# client's history and stay whe
 8. **`X-InferHub-Served-By` is surfaced, never interpreted.** A client reports which node or provider
    answered. It does not route, retry elsewhere, or prefer — deciding to re-send a prompt to a second
    address is a second disclosure of the same prompt.
-9. **One dialect, one interface; one envelope, one exception.** The hub speaks two client dialects
-   and a client models each in its own interface rather than by growing a published one
-   (`IInferHubOpenAiClient` alongside `IInferHubClient` — adding a member to a 1.0 interface breaks
-   every implementer, which is rule 3 by another route). They also **fail** differently:
+9. **One interface per published surface, and a published interface never grows; one envelope, one
+   exception.** A client models each surface in its own interface rather than by growing a published
+   one — adding a member to a shipped interface breaks every implementer, which is rule 3 by another
+   route. So `IInferHubOpenAiClient` sits alongside `IInferHubClient`, and `IInferHubAudioClient`
+   alongside both **even though audio is served in the `/v1` dialect**: rule 3 outranks the tidiness
+   of one interface per dialect, and it decides this every time. The dialects also **fail**
+   differently:
    `/api/*` answers `{"error":"…"}`, `/v1/*` answers `{"error":{"message":…,"type":…}}`, and which
    envelope arrived decides the exception type — never which method was called. The exception is
    `424`: retrieval-unavailable is one condition in both dialects and keeps one exception type.
@@ -92,10 +95,18 @@ week. The bare `v0.1.0`–`v1.0.0` tags are the C# client's history and stay whe
 
 ## Testing discipline
 
-**No test in this repository calls a live hub.** Every payload is recorded from a real one and lives
-in `spec/payloads/`: a real `speech.audio.delta` frame, a real `424`, a real provider error envelope.
-A test that needs a running mesh is a test CI cannot run, which makes it a test everybody learns to
-skip.
+**No test in this repository calls a live hub.** Payloads are recorded from a real one by driving it
+and pasting what came back — a real `424`, a real provider error envelope, a real
+`capability_unavailable`. They live as string literals in the test files until phase 15 extracts
+them (see `spec/payloads/README.md` for why moving them earlier would produce a second copy nothing
+checks). A test that needs a running mesh is a test CI cannot run, which makes it a test everybody
+learns to skip.
+
+**A payload that could not be recorded is marked as derived, in the file, with the reason.** Phase 9
+could reach a hub but not a TTS or STT node, so its refusals are recorded and its success shapes —
+`speech.audio.delta`, `speech.audio.done`, `verbose_json`, SubRip — are taken from the hub
+serializers that write those bytes. Derived is weaker than recorded and the marking is what keeps
+the difference visible; the release notes say the same thing out loud.
 
 The risk that accepts, stated rather than mitigated away: a hub-side wire change is invisible to
 these suites until somebody runs the clients' verification day or a user reports it.

@@ -15,6 +15,11 @@ TypeScript and Go are planned; see the repository README for what each covers to
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
 
+> **v1.2.0** — **audio, in both directions**: `IInferHubAudioClient` covers
+> `/v1/audio/transcriptions` (parsed, or the hub's own `srt`/`vtt`/`text` verbatim) and
+> `/v1/audio/speech` — including a synthesis you hear before it is finished, as raw chunked bytes
+> or as `speech.audio.delta` frames. Additive: nothing in 1.1 changed. See [Audio](#audio).
+
 > **v1.1.0** — the hub's **second dialect** and the **provider steer**: `IInferHubOpenAiClient`
 > covers `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings` and `/v1/models`, and every
 > call in either dialect can say which vendor may see the prompt (`X-InferHub-Provider`) and read
@@ -103,6 +108,18 @@ per-call RAG retrieval, sticky conversation routing and the provider steer — s
 | `CreateEmbeddingsAsync` | `POST /v1/embeddings` (`float` or `base64`, decoded by `AsFloats()`) |
 | `ListModelsAsync` | `GET /v1/models` (with the hub's `capabilities` extension) |
 | `GetModelAsync` | `GET /v1/models/{id}` (→ `null` on 404) |
+
+`IInferHubAudioClient` (client key — the same key, the same base address):
+
+| Method | Endpoint |
+|---|---|
+| `TranscribeAsync` | `POST /v1/audio/transcriptions` (forces `verbose_json`, returns a parsed `Transcription`) |
+| `TranscribeDocumentAsync` | `POST /v1/audio/transcriptions` (`text`/`srt`/`vtt`, returned verbatim) |
+| `CreateSpeechAsync` | `POST /v1/audio/speech` — the whole file, or `stream_format: "audio"`, read the same way |
+| `StreamSpeechAsync` | `POST /v1/audio/speech` with `stream_format: "sse"` (→ `IAsyncEnumerable<SpeechChunk>`) |
+
+There is no `InferHubCallOptions` overload on audio: these routes read neither the provider steer
+nor the conversation or retrieval headers, so one would send a header nothing reads.
 
 `IInferHubAdminClient` (admin key):
 
@@ -247,6 +264,64 @@ surface as `InferHubOpenAiException`, which carries `ErrorType`, `ErrorCode` and
 Embeddings come back as a float array or a base64 string depending on `EncodingFormat`;
 `AsFloats()` decodes either. See `samples/OpenAiDialect`.
 
+### Audio
+
+Speech out, on OpenAI's audio API. The framed form gives you the first sentence while the fourth
+is still being made:
+
+```csharp
+var audio = provider.GetRequiredService<IInferHubAudioClient>();
+
+await foreach (var chunk in audio.StreamSpeechAsync(
+    SpeechRequest.Create("piper", "Hello from the fleet.", responseFormat: SpeechFormats.Wav)))
+{
+    if (chunk.Usage is { } usage)                       // the terminal frame: a count, no audio.
+    {                                                   // Three zeros here is a TRUE count — a
+        Console.WriteLine(chunk.Characters);            // phoneme model tokenized nothing — and
+        continue;                                       // characters is what reconciles with a bill
+    }
+
+    await player.WriteAsync(chunk.Audio);
+}
+```
+
+Or the whole file — and note that this is **also** how you read `stream_format: "audio"`, because
+the client hands over the live response stream either way and never buffers somebody's audio to be
+friendly:
+
+```csharp
+await using var speech = await audio.CreateSpeechAsync(SpeechRequest.Create("piper", "Hello."));
+await using var file = File.Create("speech.wav");
+await speech.Audio.CopyToAsync(file);                   // ReadAllBytesAsync() exists, on top of this
+```
+
+Only `wav` and `pcm` can be streamed; asking to stream anything else is a `400` from the hub before
+a node is chosen, so nothing is spent. `SampleRate` and `Characters` ride on headers the hub sends
+on **streamed** answers only — for `pcm`, which is headerless by definition, that is the only place
+the rate exists.
+
+Speech in:
+
+```csharp
+await using var input = File.OpenRead("meeting.wav");   // the client never disposes your stream
+
+var transcript = await audio.TranscribeAsync(
+    TranscriptionRequest.FromStream("whisper-1", input, "meeting.wav", "audio/wav"));
+
+Console.WriteLine(transcript.Text);
+Console.WriteLine(transcript.Segments.Count);           // free from a Whisper-shaped worker
+```
+
+`TranscribeAsync` always asks the hub for `verbose_json` — the shape carrying language, duration and
+segments. For a subtitle file use `TranscribeDocumentAsync`, which sends your `ResponseFormat` and
+returns the hub's own bytes untouched: an `srt` is a file, and reinterpreting it would lose the cue
+timings that were the reason to ask.
+
+A fleet with the model but no node doing that kind of work answers `503` with
+`ErrorCode == "capability_unavailable"` and a `Retry-After`; a model no node holds is a `404` with
+`model_not_found`. Two different things to do about it, so catch on the code rather than the status
+alone.
+
 ### Steering a request
 
 `X-InferHub-Provider` says where a prompt may go, and it works in **both** dialects:
@@ -370,11 +445,12 @@ From 1.0.0 the client follows [Semantic Versioning](https://semver.org):
 - **Minor** (`1.x.0`) — additive, source-compatible: new methods, new overloads, new options.
 - **Major** (`2.0.0`) — reserved for a breaking change to the public API.
 
-New capabilities land as overloads (as the per-call RAG options did), so existing call sites
-keep compiling across the whole `1.x` line. Client versions stay independent of the
-coordinator's; `1.0.x` targets the coordinator's `v2.x` HTTP surface, and the surface the
-coordinator has grown since — audio, images, video, cloud providers, ingestion, and a node that
-serves its own API — is being added additively across the `1.x` line.
+New capabilities land as a new overload (as the per-call RAG options did) or a new interface (as the
+OpenAI dialect and audio did) — never as a member on one already published, which would break every
+implementer holding a test double. Existing call sites keep compiling across the whole `1.x` line.
+Client versions stay independent of the coordinator's; `1.0.x` targets the coordinator's `v2.x` HTTP
+surface, and the surface the coordinator has grown since — audio, images, video, cloud providers,
+ingestion, and a node that serves its own API — is being added additively across the `1.x` line.
 
 Tags in this repository are `<lang>/vX.Y.Z`, so this package's releases are `dotnet/v1.0.1`
 and onwards. The bare `v0.1.0`–`v1.0.0` tags are this client's history from before the

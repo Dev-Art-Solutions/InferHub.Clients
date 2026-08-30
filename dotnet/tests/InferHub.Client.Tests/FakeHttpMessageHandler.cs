@@ -26,6 +26,14 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
     /// <summary>Custom response headers (e.g. <c>X-InferHub-Sources</c>) attached to every reply.</summary>
     public Dictionary<string, string> ResponseHeaders { get; } = new();
 
+    /// <summary>
+    /// Custom <em>content</em> headers (e.g. <c>Content-Disposition</c>). Separate from
+    /// <see cref="ResponseHeaders"/> because <see cref="HttpResponseMessage"/> refuses a content
+    /// header on the message and vice versa — which is exactly the distinction a client reading
+    /// <c>Content-Disposition</c> beside <c>X-InferHub-Served-By</c> has to get right.
+    /// </summary>
+    public Dictionary<string, string> ContentHeaders { get; } = new();
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Requests.Add(request);
@@ -46,6 +54,11 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
         foreach (var (name, value) in ResponseHeaders)
         {
             response.Headers.TryAddWithoutValidation(name, value);
+        }
+
+        foreach (var (name, value) in ContentHeaders)
+        {
+            response.Content.Headers.TryAddWithoutValidation(name, value);
         }
 
         return response;

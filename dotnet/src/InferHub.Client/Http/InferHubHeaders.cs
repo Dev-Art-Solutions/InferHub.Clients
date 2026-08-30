@@ -19,6 +19,12 @@ internal static class InferHubHeaders
     public const string ServedBy = "X-InferHub-Served-By";
     public const string Sources = "X-InferHub-Sources";
 
+    /// <summary>The rate the speech worker measured off its own first samples. Streamed answers only.</summary>
+    public const string AudioSampleRate = "X-InferHub-Audio-Sample-Rate";
+
+    /// <summary>What a synthesis was metered in: input characters, not tokens. Streamed answers only.</summary>
+    public const string SpeechCharacters = "X-InferHub-Speech-Characters";
+
     /// <summary>The value of <see cref="Provider"/> that means "the fleet, and no vendor, for this request".</summary>
     public const string FleetOnlyProvider = "node";
 
@@ -92,6 +98,27 @@ internal static class InferHubHeaders
 
         var raw = string.Concat(values).Trim();
         return raw.Length == 0 ? null : raw;
+    }
+
+    /// <summary>
+    /// A header the hub writes as a plain integer, or <c>null</c> when it is absent or unreadable.
+    /// Absent is a real answer: the audio headers ride on streamed responses only, and a zero
+    /// invented to fill the field would be a measurement nobody took.
+    /// </summary>
+    public static long? ReadInt64(HttpResponseMessage response, string name)
+    {
+        if (!response.Headers.TryGetValues(name, out var values))
+        {
+            return null;
+        }
+
+        return long.TryParse(
+            string.Concat(values).Trim(),
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out var parsed)
+            ? parsed
+            : null;
     }
 
     public static IReadOnlyList<string>? ParseSourceIds(HttpResponseMessage response)

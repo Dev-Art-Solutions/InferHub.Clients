@@ -1,6 +1,5 @@
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using InferHub.Client.Exceptions;
@@ -195,13 +194,16 @@ public sealed class InferHubOpenAiClient : IInferHubOpenAiClient
     }
 
     /// <summary>
-    /// Reads a <c>text/event-stream</c> body: <c>data:</c> lines accumulate until a blank line ends
-    /// the frame, comments and other fields are skipped, and <c>[DONE]</c> ends the stream.
+    /// Reads a <c>text/event-stream</c> body and stops at the <c>[DONE]</c> sentinel. The line
+    /// mechanics — <c>data:</c> accumulation, comments, the blank-line frame boundary — are
+    /// <see cref="SseFrameReader"/>'s and are shared with the audio surface; what stays here is
+    /// how <em>this</em> dialect ends.
     /// </summary>
     /// <remarks>
     /// Deliberately not the NDJSON loop with a prefix flag. That loop's contract is "one object per
-    /// line, stop on <c>done:true</c>"; this one's is "fields until a blank line, stop on a
-    /// sentinel", and one method with a mode switch is two methods sharing a bug.
+    /// line, stop on <c>done:true</c>"; this one's is "frames until a sentinel", and one method with
+    /// a mode switch is two methods sharing a bug — which is also why the reader is split at the
+    /// line level and not at the stream level.
     /// <para>
     /// A stream that ends without <c>[DONE]</c> ends without an exception. The hub already sends a
     /// terminal frame with <c>finish_reason: "stop"</c> when a node drops mid-answer; throwing here
@@ -232,73 +234,25 @@ public sealed class InferHubOpenAiClient : IInferHubOpenAiClient
         var sources = InferHubHeaders.ParseSourceIds(response);
 
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream);
 
-        var data = new StringBuilder();
-
-        while (true)
+        await foreach (var frame in SseFrameReader.ReadAsync(stream, cancellationToken))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var line = await reader.ReadLineAsync(cancellationToken);
-
-            if (line is null)
+            // The sentinel ends the stream and is not JSON: deserializing it throws.
+            if (frame.Data.Equals(DoneSentinel, StringComparison.Ordinal))
             {
-                // End of body without the sentinel: emit whatever frame was still open.
-                if (TryParse(data, chunkInfo, response, out var trailing))
-                {
-                    decorate(trailing, servedBy, sources);
-                    yield return trailing;
-                }
-
                 yield break;
             }
 
-            if (line.Length == 0)
+            if (TryParse(frame.Data, chunkInfo, response, out var chunk))
             {
-                if (data.Length == 0)
-                {
-                    continue;
-                }
-
-                if (IsDone(data))
-                {
-                    yield break;
-                }
-
-                if (TryParse(data, chunkInfo, response, out var chunk))
-                {
-                    decorate(chunk, servedBy, sources);
-                    yield return chunk;
-                }
-
-                data.Clear();
-                continue;
+                decorate(chunk, servedBy, sources);
+                yield return chunk;
             }
-
-            if (line[0] == ':')
-            {
-                continue; // comment / keepalive
-            }
-
-            if (line.StartsWith("data:", StringComparison.Ordinal))
-            {
-                if (data.Length > 0)
-                {
-                    data.Append('\n');
-                }
-
-                data.Append(line["data:".Length..].TrimStart());
-            }
-
-            // "event:", "id:" and "retry:" are ignored — the OpenAI dialect sends none of them.
         }
     }
 
-    private static bool IsDone(StringBuilder data)
-        => data.Length == DoneSentinel.Length && data.ToString().Equals(DoneSentinel, StringComparison.Ordinal);
-
     private static bool TryParse<TChunk>(
-        StringBuilder data,
+        string payload,
         JsonTypeInfo<TChunk> chunkInfo,
         HttpResponseMessage response,
         out TChunk chunk)
@@ -306,15 +260,7 @@ public sealed class InferHubOpenAiClient : IInferHubOpenAiClient
     {
         chunk = null!;
 
-        if (data.Length == 0)
-        {
-            return false;
-        }
-
-        var payload = data.ToString();
-        data.Clear();
-
-        if (payload.Equals(DoneSentinel, StringComparison.Ordinal))
+        if (payload.Length == 0)
         {
             return false;
         }

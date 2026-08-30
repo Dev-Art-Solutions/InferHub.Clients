@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using InferHub.Client.Models;
 using InferHub.Client.Models.Admin;
+using InferHub.Client.Models.Audio;
 using InferHub.Client.Models.Ollama;
 using InferHub.Client.Models.OpenAi;
 using InferHub.Client.Models.Vector;
@@ -54,6 +55,11 @@ namespace InferHub.Client.Serialization;
 [JsonSerializable(typeof(OpenAiEmbeddingsResponse))]
 [JsonSerializable(typeof(OpenAiModel))]
 [JsonSerializable(typeof(OpenAiModelList))]
+[JsonSerializable(typeof(Transcription))]
+[JsonSerializable(typeof(TranscriptionSegment))]
+[JsonSerializable(typeof(SpeechRequest))]
+[JsonSerializable(typeof(SpeechChunk))]
+[JsonSerializable(typeof(SpeechUsage))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(string[]))]
 internal sealed partial class InferHubJsonContext : JsonSerializerContext

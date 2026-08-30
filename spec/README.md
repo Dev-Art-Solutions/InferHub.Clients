@@ -75,8 +75,8 @@ ever sees. Loopback skips auth unless `Auth:RequireAuthForLoopback=true`.
 |---|---|
 | `X-InferHub-Served-By` | which node or `provider:<id>` answered. **Surfaced, never interpreted** — a client does not route on it |
 | `X-InferHub-Sources` | retrieved ids. **A JSON array, but a real hub has also sent it comma-separated** — parse both. This is the corpus's first case |
-| `X-InferHub-Audio-Sample-Rate` | on speech responses |
-| `X-InferHub-Speech-Characters` | what was metered — characters, not tokens |
+| `X-InferHub-Audio-Sample-Rate` | on **streamed** speech responses only — measured off the worker's own first chunk, and for `pcm` the only place the rate exists |
+| `X-InferHub-Speech-Characters` | what was metered — characters, not tokens. **Streamed responses only**, same as above |
 
 ## The shapes that have actually broken clients
 
@@ -95,6 +95,21 @@ a schema.
 - **`X-InferHub-Sources` in two shapes**, above.
 - **`usage` of three zeros on `speech.audio.done` is a true count, not a placeholder** — a phoneme
   model tokenized nothing. A client that treats zero as "missing" reports the wrong thing.
+- **On a multipart upload every form field must precede the file part.** Above the hub's
+  `Tools:MaxStreamedBytes` the request is routed from the leading fields while the bytes are still
+  arriving, so a field after the file is a `400` naming the field. The buffered path below that
+  ceiling tolerates any order, **which is what makes this dangerous**: a client that writes the
+  file first is correct on every test recording and wrong on the first real one, in production.
+  Recorded from 3.37.0's `StreamedUpload`.
+- **`error.param` names the field the hub blames, and the two audio routes blame different ones.**
+  The same class of refusal — an unsupported `response_format` — comes back with `param: "model"`
+  from `/v1/audio/transcriptions` and `param: "input"` from `/v1/audio/speech`. A client that maps
+  `param` onto its own property names points the caller at the wrong field; surface it verbatim.
+  Both recorded from 3.37.0.
+- **`503` + `capability_unavailable` is not `404`.** "The fleet holds this model but no node is
+  currently doing this kind of work" carries `Retry-After` and is worth retrying later; "no node
+  holds the model" is a `404` with `code: "model_not_found"` and is not. Recorded from 3.37.0 for
+  both `transcribe` and `speak`.
 - **An absent count stays absent.** A zero constructed to fill a field is not a measurement, and the
   hub is careful about this in both directions.
 - **The two dialects fail in two envelopes.** `/api/*` answers `{"error":"…"}`; `/v1/*` answers
