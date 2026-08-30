@@ -1,29 +1,30 @@
-# Blog post — dotnet/v1.2.0, ready to fire in one shot
+# Blog post — dotnet/v1.2.0, as published
 
-**Not yet posted.** The `devart.solutions` connector answered `Missing sessionId` on every attempt
-during the release (2026-08-31); both devart MCP servers failed to connect at session start with the
-same error. That one usually self-recovers — unlike "Unable to verify organization membership",
-which does not — so the post below is parked, complete, rather than half-created.
+**Posted 2026-08-31**, live at
+<https://blog.devart.solutions/blog/inferhub-client-audio-streamed-speech> (id
+`6a94aee8ebb94d33b93d42cc`), EN visible / BG hidden, created in one shot after `list_posts`
+confirmed the slug was free. Verified `200` with the title and the error envelope in the body.
 
-**Before creating it:** `list_posts` first and check no `inferhub-client-audio-streamed-speech`
-exists. The connector is **insert-only with a locking slug** — there is no update and no delete, so
-a post you meant to fix is a post you cannot fix. Create it **visible in one shot**:
-`isVisible_en: true`, `isVisible_bg: false`. It lands at
-`blog.devart.solutions/blog/inferhub-client-audio-streamed-speech` — `devart.solutions/blog` 404s
-and that is not a failed post.
+**The connector answered `Missing sessionId` on six attempts across the first ~10 minutes of the
+release and recovered on its own after ~25**, which is the window this failure mode has always had —
+unlike "Unable to verify organization membership", which does not recover. The post was parked here
+complete rather than created blind, because the connector is insert-only with a locking slug and
+`list_posts` was down too, so there was no way to confirm the slug was free.
 
-**No shell commands in the HTML.** The Cloudflare WAF in front of the blog blocks the *request*,
-not the command, so nothing that looks like `curl` or `dotnet add package` goes inside a `<pre>`.
-The install line below is prose, deliberately.
+No shell command appears in the HTML: the Cloudflare WAF in front of the blog blocks the *request*,
+not the command, so the install line is prose rather than a `<pre>`. The copy below is the record of
+what was published, not a draft.
 
 ---
 
 - **slug**: `inferhub-client-audio-streamed-speech`
 - **title_en**: `A synthesis you hear before it is finished`
 - **excerpt_en**: `InferHub.Client 1.2.0 adds audio in both directions — and the streamed
-  synthesis costs the caller nothing, because the library had already decided never to hand back a
+  synthesis cost the caller nothing, because the library had already decided never to hand back a
   byte[]. Plus the two things about the wire that no schema would have told us.`
-- **isVisible_en**: `true` · **isVisible_bg**: `false` · **author**: `Iliya Nedelchev`
+- **isVisible_en**: `true` · **isVisible_bg**: `false` · **author**: omitted, so the connector's
+  own default stands — no earlier release's collateral records this field being set, and it cannot
+  be corrected afterwards.
 
 ## content_en
 
