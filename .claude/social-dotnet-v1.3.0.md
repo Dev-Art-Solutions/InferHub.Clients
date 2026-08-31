@@ -41,12 +41,24 @@ into "we rendered a picture with it".
 
 ## X
 
+**~264 characters.** The first draft ran to ~380 and had to be cut; keep any edit under 280,
+counting the URL as 23 whatever its real length.
+
+> InferHub.Client 1.3.0 — images, and the async job seam under them.
+>
+> Fetching a finished render is read-once at the hub, and it's a GET. So the client refuses to
+> retry it: the retry would collect a 410 where your picture used to be.
+>
+> nuget.org/packages/InferHub.Client
+
+Alternative, ~275, if the "we turned it off" beat is worth the extra length:
+
 > InferHub.Client 1.3.0 — images, and the job seam under them.
 >
-> Submit, watch it step through over SSE, fetch the bytes. That fetch is read-once at the hub, so
-> the client refuses to retry it: the retry would collect a 410 where your picture used to be.
+> Collecting a finished render is read-once at the hub — and it's a GET, so a retry handler would
+> re-send it and collect a 410 where your picture used to be. We turned that retry off.
 >
-> Additive. Two dependencies. No image library. nuget.org/packages/InferHub.Client
+> nuget.org/packages/InferHub.Client
 
 ## Notes for the blog post
 
