@@ -121,6 +121,39 @@ internal static class InferHubHeaders
             : null;
     }
 
+    /// <summary>
+    /// A header the hub writes as a decimal number, parsed invariantly. The hub formats it
+    /// invariantly for the same reason: a decimal comma is a bug that only appears on a Bulgarian or
+    /// German host, and a header is parsed by somebody else's client.
+    /// </summary>
+    public static double? ReadDouble(HttpResponseMessage response, string name)
+    {
+        if (!response.Headers.TryGetValues(name, out var values))
+        {
+            return null;
+        }
+
+        return double.TryParse(
+            string.Concat(values).Trim(),
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out var parsed)
+            ? parsed
+            : null;
+    }
+
+    /// <summary>A header read verbatim, or <c>null</c> when it is absent or blank.</summary>
+    public static string? ReadString(HttpResponseMessage response, string name)
+    {
+        if (!response.Headers.TryGetValues(name, out var values))
+        {
+            return null;
+        }
+
+        var raw = string.Concat(values).Trim();
+        return raw.Length == 0 ? null : raw;
+    }
+
     public static IReadOnlyList<string>? ParseSourceIds(HttpResponseMessage response)
     {
         if (!response.Headers.TryGetValues(Sources, out var values))

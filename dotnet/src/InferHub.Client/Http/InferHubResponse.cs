@@ -30,12 +30,14 @@ internal static class InferHubResponse
             ?? TryExtractErrorMessage(body)
             ?? $"InferHub request failed with status {(int)response.StatusCode} ({response.StatusCode}).";
 
+        var retryAfter = ReadRetryAfter(response);
+
         // 424 first, in both dialects: "retrieval was asked for and could not be satisfied" is one
         // condition, and a caller who catches it should not have to catch it twice because the
         // answer came back through /v1.
         if (response.StatusCode == System.Net.HttpStatusCode.FailedDependency)
         {
-            throw new InferHubRetrievalException(message, body);
+            throw new InferHubRetrievalException(message, body) { RetryAfter = retryAfter };
         }
 
         if (openAi is { } error)
@@ -46,10 +48,43 @@ internal static class InferHubResponse
                 body,
                 error.Type,
                 error.Code,
-                error.Param);
+                error.Param)
+            {
+                RetryAfter = retryAfter
+            };
         }
 
-        throw new InferHubException(response.StatusCode, message, body);
+        throw new InferHubException(response.StatusCode, message, body) { RetryAfter = retryAfter };
+    }
+
+    /// <summary>
+    /// <c>Retry-After</c>, in the delta-seconds form the hub always writes. An HTTP-date is accepted
+    /// too and converted, because the header allows it and a proxy in the path may rewrite it.
+    /// </summary>
+    public static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+    {
+        var header = response.Headers.RetryAfter;
+
+        if (header is null)
+        {
+            return null;
+        }
+
+        if (header.Delta is { } delta)
+        {
+            return delta;
+        }
+
+        if (header.Date is { } date)
+        {
+            var wait = date - DateTimeOffset.UtcNow;
+
+            // A date already in the past means "now", not a negative wait a caller would pass to
+            // Task.Delay.
+            return wait > TimeSpan.Zero ? wait : TimeSpan.Zero;
+        }
+
+        return null;
     }
 
     public static string? TryExtractErrorMessage(string body)

@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using InferHub.Client.Models;
 using InferHub.Client.Models.Admin;
 using InferHub.Client.Models.Audio;
+using InferHub.Client.Models.Images;
 using InferHub.Client.Models.Ollama;
 using InferHub.Client.Models.OpenAi;
 using InferHub.Client.Models.Vector;
@@ -60,6 +61,12 @@ namespace InferHub.Client.Serialization;
 [JsonSerializable(typeof(SpeechRequest))]
 [JsonSerializable(typeof(SpeechChunk))]
 [JsonSerializable(typeof(SpeechUsage))]
+[JsonSerializable(typeof(ImageGenerationRequest))]
+[JsonSerializable(typeof(ImageResponse))]
+[JsonSerializable(typeof(ImageData))]
+[JsonSerializable(typeof(MediaJob))]
+[JsonSerializable(typeof(MediaJobOutput))]
+[JsonSerializable(typeof(MediaJobList))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(string[]))]
 internal sealed partial class InferHubJsonContext : JsonSerializerContext

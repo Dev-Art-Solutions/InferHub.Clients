@@ -123,6 +123,29 @@ a schema.
 - **A streamed `/v1` frame with an empty `choices` array is the usage frame**, and it is the only
   place a streamed call reports token counts (`stream_options.include_usage`). A client that skips
   frames with no choices reports "usage: not available" for every stream.
+- **An image job's SSE stream has no `[DONE]` and no sentinel of any kind.** Each frame is
+  `event: <state>` plus the **whole job document**, and the stream simply ends after the terminal
+  one. So a client keys on the payload's own `state` and stops there; one that waited for a sentinel
+  hangs until the hub closes the socket, and one that treated the 15-second keep-alive as progress
+  reports the same step twice. The keep-alive re-sends the current state rather than a comment,
+  which is deliberate — a client that reconnected mid-render needs no catch-up `GET`.
+- **A refused image extension header names the *header* in `error.param`**, not a body field:
+  `param: "X-InferHub-Image-Steps"`, `"X-InferHub-Image-Strength"`,
+  `"X-InferHub-Mask-Convention"`. Surface it verbatim. Recorded from 3.37.0, all three.
+- **`param` is a header and `code` is `null` on the same error.** The extension-header refusals carry
+  both at once, so a client that requires a `code` to recognise an OpenAI envelope loses the only
+  sentence explaining what is wrong.
+- **A variation's two refusals are the argument for a separate request type.** `prompt` on a
+  variation is a `400` naming `prompt`, `mask` is a `400` naming `mask`, and both say which route to
+  use instead. A client that models edits and variations as one record with nullable fields ships
+  both refusals as runtime surprises. Recorded from 3.37.0.
+- **A multipart image job must name its `operation`**; the hub refuses to guess, because a typo in a
+  field name would otherwise turn a variation into an edit. The synchronous `/v1` routes take no
+  `operation` at all — there the route *is* the operation.
+- **The job document is the same for images and video.** `/api/videos/jobs` renders through the same
+  serializer, distinguished by `capability`, and each output's `url` already points at its own
+  content route (`/v1/videos/{id}/content` for a clip). A client type named for one modality is a
+  rename waiting to happen.
 - **`data: [DONE]` is not JSON.** It ends the stream; deserializing it throws. And a stream that
   ends *without* it is a node that dropped: the hub already sent a terminal frame with
   `finish_reason: "stop"`, so the honest client keeps the partial answer rather than raising.

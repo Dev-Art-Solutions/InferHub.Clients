@@ -6,13 +6,13 @@ namespace InferHub.Client.Extensions;
 
 /// <summary>
 /// DI wiring for <see cref="IInferHubClient"/>, <see cref="IInferHubOpenAiClient"/>,
-/// <see cref="IInferHubAudioClient"/> and <see cref="IInferHubAdminClient"/>.
+/// <see cref="IInferHubAudioClient"/>, <see cref="IInferHubImagesClient"/> and <see cref="IInferHubAdminClient"/>.
 /// </summary>
 public static class InferHubClientServiceCollectionExtensions
 {
     /// <summary>
     /// Register <see cref="IInferHubClient"/>, <see cref="IInferHubOpenAiClient"/>,
-    /// <see cref="IInferHubAudioClient"/> and <see cref="IInferHubAdminClient"/>, each with its own
+    /// <see cref="IInferHubAudioClient"/>, <see cref="IInferHubImagesClient"/> and <see cref="IInferHubAdminClient"/>, each with its own
     /// typed <see cref="HttpClient"/> and bearer-auth <see cref="DelegatingHandler"/>. The
     /// inference clients send <see cref="InferHubClientOptions.ApiKey"/>; the admin client sends
     /// <see cref="InferHubClientOptions.AdminApiKey"/>. The admin and audio clients have
@@ -66,6 +66,18 @@ public static class InferHubClientServiceCollectionExtensions
         // mid-sentence. Infinite here, and Options.Timeout applied per transcription instead —
         // the same shape the admin client's SSE stream already needed.
         services.AddHttpClient<IInferHubAudioClient, InferHubAudioClient>(client =>
+        {
+            client.BaseAddress = EnsureTrailingSlash(options.BaseAddress);
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        })
+        .AddHttpMessageHandler<TransientRetryHandler>()
+        .AddHttpMessageHandler<BearerAuthorizationHandler>();
+
+        // Images share the address, the key and the handler chain. Infinite here for two reasons at
+        // once: a synchronous render holds the connection for as long as the hub's own
+        // Images:SyncMaxWaitSeconds allows, and the job watch is an SSE stream that lives as long as
+        // the render does. Options.Timeout is applied to the short calls instead.
+        services.AddHttpClient<IInferHubImagesClient, InferHubImagesClient>(client =>
         {
             client.BaseAddress = EnsureTrailingSlash(options.BaseAddress);
             client.Timeout = Timeout.InfiniteTimeSpan;

@@ -11,6 +11,12 @@ namespace InferHub.Client.Http;
 /// Mutating and streaming calls (chat/generate/upsert/delete, POST/PUT/DELETE) are passed
 /// straight through, so nothing is ever silently re-run and a stream never retries mid-flight.
 /// </summary>
+/// <remarks>
+/// A request marked <see cref="InferHubRequestOptions.NeverRetry"/> is passed straight through too,
+/// whatever its method. That marker exists for one route: fetching an image job's content is a
+/// <c>GET</c> whose read <b>unlinks the bytes at the hub</b>, so re-sending it after a dropped
+/// connection collects a <c>410</c> and destroys the only copy.
+/// </remarks>
 internal sealed class TransientRetryHandler : DelegatingHandler
 {
     private readonly InferHubClientOptions options;
@@ -23,7 +29,7 @@ internal sealed class TransientRetryHandler : DelegatingHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var maxAttempts = options.MaxRetryAttempts;
-        if (maxAttempts <= 0 || !IsIdempotent(request.Method))
+        if (maxAttempts <= 0 || !IsIdempotent(request.Method) || InferHubRequestOptions.IsNeverRetry(request))
         {
             return await base.SendAsync(request, cancellationToken);
         }

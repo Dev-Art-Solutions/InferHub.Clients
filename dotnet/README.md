@@ -15,6 +15,11 @@ TypeScript and Go are planned; see the repository README for what each covers to
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
 
+> **v1.3.0** — **images, and the job seam**: `IInferHubImagesClient` covers
+> `/v1/images/generations|edits|variations` for a render you wait for, and `/api/images/jobs` for one
+> you do not — a place in line, per-step progress over SSE, and content the hub hands over
+> **exactly once**. Additive: nothing in 1.2 changed. See [Images](#images).
+
 > **v1.2.0** — **audio, in both directions**: `IInferHubAudioClient` covers
 > `/v1/audio/transcriptions` (parsed, or the hub's own `srt`/`vtt`/`text` verbatim) and
 > `/v1/audio/speech` — including a synthesis you hear before it is finished, as raw chunked bytes
@@ -120,6 +125,20 @@ per-call RAG retrieval, sticky conversation routing and the provider steer — s
 
 There is no `InferHubCallOptions` overload on audio: these routes read neither the provider steer
 nor the conversation or retrieval headers, so one would send a header nothing reads.
+
+`IInferHubImagesClient` (client key — the same key, the same base address):
+
+| Method | Endpoint |
+|---|---|
+| `GenerateAsync` | `POST /v1/images/generations` — submit and wait |
+| `EditAsync` | `POST /v1/images/edits` (multipart: picture, prompt, optional mask) |
+| `CreateVariationAsync` | `POST /v1/images/variations` (multipart: picture only) |
+| `SubmitAsync` | `POST /api/images/jobs` — the same three requests, as a job |
+| `ListJobsAsync` | `GET /api/images/jobs` (this client's jobs, plus the queue's own depth) |
+| `GetJobAsync` | `GET /api/images/jobs/{id}` (→ `null` on 404) |
+| `WatchJobAsync` | `GET /api/images/jobs/{id}/events` (SSE → `IAsyncEnumerable<MediaJob>`) |
+| `OpenContentAsync` | `GET /api/images/jobs/{id}/content/{index}` — **read once** |
+| `CancelJobAsync` | `DELETE /api/images/jobs/{id}` |
 
 `IInferHubAdminClient` (admin key):
 
@@ -321,6 +340,78 @@ A fleet with the model but no node doing that kind of work answers `503` with
 `ErrorCode == "capability_unavailable"` and a `Retry-After`; a model no node holds is a `404` with
 `model_not_found`. Two different things to do about it, so catch on the code rather than the status
 alone.
+
+### Images
+
+Two ways to ask for the same picture, and the difference is whether you wait. Synchronously, on
+OpenAI's own Images API:
+
+```csharp
+var images = provider.GetRequiredService<IInferHubImagesClient>();
+
+var answer = await images.GenerateAsync(new ImageGenerationRequest
+{
+    Model = "sdxl",
+    Prompt = "a lighthouse in fog, long exposure",
+    Size = "1024x1024",                                  // both sides a multiple of 8
+    Options = new ImageOptions { Steps = 28, Seed = 42 }  // these travel as headers
+});
+
+await File.WriteAllBytesAsync("lighthouse.png", answer.Data[0].ToBytes());
+```
+
+The picture comes back base64 because the hub **stores nothing** — asking for `response_format:
+"url"` is a `400` that says so. Past the hub's `Images:SyncMaxWaitSeconds` the call answers `503`
+with `ErrorCode == "job_still_running"`: the render carries on, and the message names the job. Which
+is the other way:
+
+```csharp
+var job = await images.SubmitAsync(new ImageGenerationRequest { Model = "sdxl", Prompt = "…" });
+
+await foreach (var progress in images.WatchJobAsync(job.Id))   // ends on the terminal frame
+{
+    Console.WriteLine($"{progress.State} {progress.Step}/{progress.TotalSteps}");
+    job = progress;
+}
+
+await using var content = await images.OpenContentAsync(job.Id, 0);
+await using var file = File.Create("lighthouse.png");
+await content.Image.CopyToAsync(file);                          // ReadAllBytesAsync() on top of this
+```
+
+**That fetch is read-once.** The read unlinks the bytes at the hub: a second fetch is a `410` with
+`job_expired`, and so is a retried one — which is why this client refuses to re-send that request
+even with `MaxRetryAttempts` turned on. Results live five minutes by default and are dropped on
+delivery, so a job is work rather than a gallery.
+
+`content.Projection` is the one thing only this response carries — `flat` or `equirectangular`,
+**declared by the worker, never guessed from the aspect ratio**, because a 2:1 photograph and a 2:1
+panorama are the same bytes in the same shape. `MediaJob` is named for the modality it is not:
+the hub renders video jobs from the same document, and phase 11 reuses this type rather than
+renaming it.
+
+Editing and varying are multipart, and the two are separate types on purpose:
+
+```csharp
+await using var picture = File.OpenRead("room.png");             // never disposed by the client
+
+await images.EditAsync(new ImageEditRequest
+{
+    Model = "sdxl", Prompt = "make it night",
+    Image = picture, ImageContentType = "image/png",
+    Options = new ImageOptions { Strength = 0.6, MaskConvention = MaskConventions.OpenAi }
+});
+```
+
+`ImageVariationRequest` has no `Prompt` and no `Mask` because the hub refuses both with a `400` —
+"a variation takes no prompt, it is 'more of this picture'". Two types make those two refusals
+impossible to write rather than something you discover over the network. For image-to-image *with*
+a prompt, that is an edit with no mask.
+
+A fleet with the model but no node rendering answers `503` with
+`ErrorCode == "capability_unavailable"` and a `Retry-After` you can read off
+`ex.RetryAfter`; a model no node holds is a `404` with `model_not_found` and no retry to wait for.
+See `samples/ImageJob` for the whole submit-watch-collect loop.
 
 ### Steering a request
 
