@@ -29,7 +29,7 @@ plans/          build briefs. Gitignored except plans/CLAUDE.md, which is the fo
 ## Build / test / run
 
 ```powershell
-dotnet test dotnet/InferHub.Client.sln                 # 163 per TFM: 160 pass, 3 skip (env-gated integration)
+dotnet test dotnet/InferHub.Client.sln                 # 197 per TFM: 194 pass, 3 skip (env-gated integration)
 dotnet format dotnet/InferHub.Client.sln --verify-no-changes
 dotnet run --project dotnet/samples/BasicChat          # needs a coordinator on :5080
 ```
@@ -92,6 +92,13 @@ week. The bare `v0.1.0`–`v1.0.0` tags are the C# client's history and stay whe
    `424`: retrieval-unavailable is one condition in both dialects and keeps one exception type.
    Per-call *headers* stay shared (`InferHubCallOptions`), because the hub reads the same ones on
    both surfaces and a caller should not switch dialects to keep a prompt off a vendor's servers.
+10. **A route the hub refuses by design is taught, not published as a method that throws.** The hub
+    answers `501 not_supported` on `GET /v1/videos` and `POST /v1/videos/{id}/remix`, with the reason
+    in the sentence — an id is itself the capability to fetch the bytes, and nothing durable holds
+    the prompt that made a clip. So `IInferHubVideoClient` has neither method: rule 3 means anything
+    published has to be kept, and a member that can only throw reads as "not implemented yet", which
+    is the opposite of what the refusal says. What ships instead is the code
+    (`VideoErrorCodes.NotSupported`), the alternative, and the recorded body in the test file.
 
 ## Testing discipline
 

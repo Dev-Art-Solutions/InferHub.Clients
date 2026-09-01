@@ -6,13 +6,13 @@ namespace InferHub.Client.Extensions;
 
 /// <summary>
 /// DI wiring for <see cref="IInferHubClient"/>, <see cref="IInferHubOpenAiClient"/>,
-/// <see cref="IInferHubAudioClient"/>, <see cref="IInferHubImagesClient"/> and <see cref="IInferHubAdminClient"/>.
+/// <see cref="IInferHubAudioClient"/>, <see cref="IInferHubImagesClient"/>, <see cref="IInferHubVideoClient"/> and <see cref="IInferHubAdminClient"/>.
 /// </summary>
 public static class InferHubClientServiceCollectionExtensions
 {
     /// <summary>
     /// Register <see cref="IInferHubClient"/>, <see cref="IInferHubOpenAiClient"/>,
-    /// <see cref="IInferHubAudioClient"/>, <see cref="IInferHubImagesClient"/> and <see cref="IInferHubAdminClient"/>, each with its own
+    /// <see cref="IInferHubAudioClient"/>, <see cref="IInferHubImagesClient"/>, <see cref="IInferHubVideoClient"/> and <see cref="IInferHubAdminClient"/>, each with its own
     /// typed <see cref="HttpClient"/> and bearer-auth <see cref="DelegatingHandler"/>. The
     /// inference clients send <see cref="InferHubClientOptions.ApiKey"/>; the admin client sends
     /// <see cref="InferHubClientOptions.AdminApiKey"/>. The admin and audio clients have
@@ -78,6 +78,19 @@ public static class InferHubClientServiceCollectionExtensions
         // Images:SyncMaxWaitSeconds allows, and the job watch is an SSE stream that lives as long as
         // the render does. Options.Timeout is applied to the short calls instead.
         services.AddHttpClient<IInferHubImagesClient, InferHubImagesClient>(client =>
+        {
+            client.BaseAddress = EnsureTrailingSlash(options.BaseAddress);
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        })
+        .AddHttpMessageHandler<TransientRetryHandler>()
+        .AddHttpMessageHandler<BearerAuthorizationHandler>();
+
+        // Video shares the address, the key and the handler chain. Infinite here for the reason the
+        // images client has one and one it does not: fetching a clip is a download of tens of
+        // megabytes that the caller reads after OpenContentAsync returns, and a timer still running
+        // then would abort the transfer of bytes that no longer exist anywhere else. Nothing on this
+        // surface streams — the watch is a poll — so Options.Timeout governs every short call.
+        services.AddHttpClient<IInferHubVideoClient, InferHubVideoClient>(client =>
         {
             client.BaseAddress = EnsureTrailingSlash(options.BaseAddress);
             client.Timeout = Timeout.InfiniteTimeSpan;

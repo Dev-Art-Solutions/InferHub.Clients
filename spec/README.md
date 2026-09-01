@@ -42,13 +42,14 @@ Legend: **✓** served · **—** not served · *(auth)* which key opens it.
 | `GET /api/images/jobs/{id}` | ✓ | ✓ | |
 | `GET /api/images/jobs/{id}/events` | ✓ | ✓ | SSE progress |
 | `GET /api/images/jobs/{id}/content/{index}` | ✓ | ✓ | **read-once — the read unlinks the bytes** |
-| `POST /api/videos/jobs` | ✓ | — | **hub only**; a node serves video through `/v1/videos` |
+| `GET /api/videos/jobs` | ✓ | — | **hub only** — the client-scoped listing, in the *job* vocabulary. There is no `POST` here: a clip is submitted through `/v1/videos`. A node keeps no index to enumerate |
 | `/v1/chat/completions`, `/v1/completions` | ✓ | ✓ | the OpenAI dialect |
 | `/v1/embeddings`, `/v1/models`, `/v1/models/{id}` | ✓ | ✓ | |
 | `POST /v1/audio/transcriptions` | ✓ | ✓ | |
 | `POST /v1/audio/speech` | ✓ | ✓ | streams since hub 3.37.0 — see below |
 | `POST /v1/images/generations\|edits\|variations` | ✓ | ✓ | |
-| `POST /v1/videos`, `GET /v1/videos/{id}`, `/content`, `POST /{id}/remix` | ✓ | ✓ | `/content` is read-once |
+| `POST /v1/videos`, `GET /v1/videos/{id}`, `/content`, `DELETE /v1/videos/{id}` | ✓ | ✓ | OpenAI's Videos API. `/content` is read-once and takes **no index** — one clip per job. `DELETE` cancels *and* drops |
+| `GET /v1/videos`, `POST /v1/videos/{id}/remix` | **501** | **501** | mapped so the refusal is a sentence rather than a `404` a client reads as "old hub". Listing: a video id is itself the capability to fetch the bytes. Remix: nothing durable holds the prompt that made a clip |
 | `/api/admin/**` | ✓ *(admin)* | — | **hub only** — fleet, profiles, model lifecycle, collections, usage, clients, the SSE stream |
 | `GET /metrics` | ✓ *(admin)* | — | open only when `Metrics:OpenScrape=true` |
 | `GET /console` | ✓ | — | the management UI |
@@ -142,6 +143,24 @@ a schema.
 - **A multipart image job must name its `operation`**; the hub refuses to guess, because a typo in a
   field name would otherwise turn a variation into an edit. The synchronous `/v1` routes take no
   `operation` at all — there the route *is* the operation.
+- **A video size is a multiple of 16 where an image size is a multiple of 8.** `1920x1080` is a
+  perfectly good image size and a `400` for a video, because every latent *video* pipeline in the
+  hub's pinned wheel downsamples by 16 — so the first size a client author copies from their image
+  code is the one that fails. The nearest size that passes is `1920x1088`. Recorded from 3.37.0,
+  both ways round.
+- **A `501` here is a decision, not an old hub.** `GET /v1/videos` and `POST /v1/videos/{id}/remix`
+  are mapped so the refusal carries its reason. A client that ships those methods anyway publishes
+  something that can only throw; a client that treats the `501` as "unsupported by this version"
+  tells its caller to upgrade the hub, which will not help.
+- **Video has no SSE, and its `progress` is capped at 99.** The image job seam streams
+  (`/api/images/jobs/{id}/events`); the Videos dialect has no events route at all, and a video id on
+  the images one is a `404` — those routes are scoped to the image capabilities. So a client polls
+  `GET /v1/videos/{id}`, and it must key on the *status* rather than on `progress == 100`: the hub
+  only ever writes 100 once the render is over, precisely so that a client stopping at 100 does not
+  stop one round trip before the bytes exist.
+- **One record, two id spellings.** `/v1/videos` says `video_<32 hex>` and `GET /api/videos/jobs`
+  says the bare GUID, for the same job. A caller crossing between the listing and the bytes has to
+  convert, and a client that does not offer the conversion teaches it by 404.
 - **The job document is the same for images and video.** `/api/videos/jobs` renders through the same
   serializer, distinguished by `capability`, and each output's `url` already points at its own
   content route (`/v1/videos/{id}/content` for a clip). A client type named for one modality is a

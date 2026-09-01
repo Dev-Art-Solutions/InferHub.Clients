@@ -6,6 +6,7 @@ using InferHub.Client.Models.Audio;
 using InferHub.Client.Models.Images;
 using InferHub.Client.Models.Ollama;
 using InferHub.Client.Models.OpenAi;
+using InferHub.Client.Models.Videos;
 using InferHub.Client.Models.Vector;
 
 namespace InferHub.Client.Serialization;
@@ -67,6 +68,10 @@ namespace InferHub.Client.Serialization;
 [JsonSerializable(typeof(MediaJob))]
 [JsonSerializable(typeof(MediaJobOutput))]
 [JsonSerializable(typeof(MediaJobList))]
+[JsonSerializable(typeof(VideoGenerationRequest))]
+[JsonSerializable(typeof(Video))]
+[JsonSerializable(typeof(VideoError))]
+[JsonSerializable(typeof(VideoDeletion))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(string[]))]
 internal sealed partial class InferHubJsonContext : JsonSerializerContext

@@ -5,7 +5,7 @@ Ollama-compatible inference mesh. One repository, one hub surface, a client per 
 
 | Language | Package | Version | Status |
 |---|---|---|---|
-| **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.3.0` | shipping |
+| **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.4.0` | shipping |
 | **Python** — [`python/`](python/) | PyPI | — | planned |
 | **TypeScript** — [`js/`](js/) | npm | — | planned |
 | **Go** — [`go/`](go/) | `pkg.go.dev` | — | planned |
@@ -30,13 +30,13 @@ Empty columns are the honest state, not an oversight — each one names the phas
 | OpenAI dialect (`/v1/*`) + provider steer | ✓ | — | — | — |
 | Audio — transcription and streamed speech | ✓ | — | — | — |
 | Images — sync, async jobs, read-once content | ✓ | — | — | — |
-| Video | phase 11 | — | — | — |
+| Video — the OpenAI dialect, read-once content | ✓ | — | — | — |
 | Ingestion, chunked upload, search & rerank | phase 12 | — | — | — |
 | Admin: profiles, model lifecycle, usage | phase 13 | — | — | — |
 | A node as a first-class target | phase 14 | — | — | — |
 | Core client | ✓ | phase 16 | phase 19 | phase 22 |
 | Retrieval | ✓ | phase 17 | phase 20 | phase 23 |
-| Modalities, admin, node, and 1.0 | phases 11–14 (8, 9, 10 done) | phase 18 | phase 21 | phase 24 |
+| Modalities, admin, node, and 1.0 | phases 12–14 (8–11 done) | phase 18 | phase 21 | phase 24 |
 
 ## Layout
 
@@ -69,7 +69,7 @@ Full documentation: [`dotnet/README.md`](dotnet/README.md).
 
 ## Releases
 
-Tags are `<lang>/vX.Y.Z` — `dotnet/v1.3.0`, and `python/v0.1.0` when it exists. A Go module in a
+Tags are `<lang>/vX.Y.Z` — `dotnet/v1.4.0`, and `python/v0.1.0` when it exists. A Go module in a
 subdirectory only resolves from a tag prefixed with that subdirectory, so the scheme Go requires is
 the one every language uses. Each package versions independently; the bare `v0.1.0`–`v1.0.0` tags
 are the C# client's history from before this repository held more than one language.

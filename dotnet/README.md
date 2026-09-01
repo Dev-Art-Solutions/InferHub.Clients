@@ -15,6 +15,12 @@ TypeScript and Go are planned; see the repository README for what each covers to
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
 
+> **v1.4.0** — **video**, in OpenAI's own asynchronous dialect: `IInferHubVideoClient` covers
+> `POST /v1/videos`, the poll, the read-once `/content` and the `DELETE` that cancels *and* drops,
+> plus the one route that dialect lacks — `GET /api/videos/jobs`. Two of its routes are `501`s with
+> a reason rather than methods that could only throw. Additive: nothing in 1.3 changed. See
+> [Video](#video).
+
 > **v1.3.0** — **images, and the job seam**: `IInferHubImagesClient` covers
 > `/v1/images/generations|edits|variations` for a render you wait for, and `/api/images/jobs` for one
 > you do not — a place in line, per-step progress over SSE, and content the hub hands over
@@ -139,6 +145,20 @@ nor the conversation or retrieval headers, so one would send a header nothing re
 | `WatchJobAsync` | `GET /api/images/jobs/{id}/events` (SSE → `IAsyncEnumerable<MediaJob>`) |
 | `OpenContentAsync` | `GET /api/images/jobs/{id}/content/{index}` — **read once** |
 | `CancelJobAsync` | `DELETE /api/images/jobs/{id}` |
+
+`IInferHubVideoClient` (client key — the same key, the same base address):
+
+| Method | Endpoint |
+|---|---|
+| `CreateAsync` | `POST /v1/videos` — accepted immediately, `status: queued` |
+| `GetAsync` | `GET /v1/videos/{id}` (→ `null` on 404) |
+| `WatchAsync` | polls `GET /v1/videos/{id}` (→ `IAsyncEnumerable<Video>`) — **there is no SSE here** |
+| `OpenContentAsync` | `GET /v1/videos/{id}/content` — **read once**, no index |
+| `DeleteAsync` | `DELETE /v1/videos/{id}` — cancel **and** drop |
+| `ListJobsAsync` | `GET /api/videos/jobs` (this client's video jobs, in the job vocabulary) |
+
+No `RemixAsync` and no `ListAsync`: the hub answers `501 not_supported` on both, with the reason in
+the sentence. A method that could only throw is a method somebody has to keep forever.
 
 `IInferHubAdminClient` (admin key):
 
@@ -387,8 +407,9 @@ delivery, so a job is work rather than a gallery.
 `content.Projection` is the one thing only this response carries — `flat` or `equirectangular`,
 **declared by the worker, never guessed from the aspect ratio**, because a 2:1 photograph and a 2:1
 panorama are the same bytes in the same shape. `MediaJob` is named for the modality it is not:
-the hub renders video jobs from the same document, and phase 11 reuses this type rather than
-renaming it.
+the hub renders video jobs from the same document, and 1.4.0's `ListJobsAsync` returns this very
+type rather than a renamed copy. What it does *not* cover is a clip in OpenAI's own dialect — that
+is [`Video`](#video), a different document with a different vocabulary.
 
 Editing and varying are multipart, and the two are separate types on purpose:
 
@@ -412,6 +433,64 @@ A fleet with the model but no node rendering answers `503` with
 `ErrorCode == "capability_unavailable"` and a `Retry-After` you can read off
 `ex.RetryAfter`; a model no node holds is a `404` with `model_not_found` and no retry to wait for.
 See `samples/ImageJob` for the whole submit-watch-collect loop.
+
+### Video
+
+Video has no synchronous twin, because OpenAI's Videos API is asynchronous by construction — you
+get a clip object back with `status: queued` and the render happens afterwards:
+
+```csharp
+var video = provider.GetRequiredService<IInferHubVideoClient>();
+
+var clip = await video.CreateAsync(new VideoGenerationRequest
+{
+    Model = "wan2.2",
+    Prompt = "a kite over a grey sea",
+    Size = VideoSizes.Wide480,                          // 832x480 — see below
+    Seconds = 5,
+    Options = new VideoOptions { Steps = 30, Seed = 42 }  // these travel as headers
+});
+
+await foreach (var progress in video.WatchAsync(clip.Id))    // a poll, not a stream
+{
+    Console.WriteLine($"{progress.Status} {progress.Progress}%");
+    clip = progress;
+}
+
+await using var content = await video.OpenContentAsync(clip.Id);   // no index: one clip per job
+await using var file = File.Create("kite.mp4");
+await content.Video.CopyToAsync(file);
+```
+
+**A video size is a multiple of 16, where an image size is a multiple of 8.** So `1920x1080` — a
+perfectly good picture — is a `400` here, and `VideoSizes.Wide1088` (`1920x1088`) is its honest
+neighbour. `VideoSizes.IsValid` checks a size you built yourself; the client never refuses one
+locally, because the recipe's own catalogue is narrower than the grid rule and only the node knows
+it.
+
+**`WatchAsync` polls because there is nothing to stream**: the image job seam has an SSE events
+route, the Videos dialect has none, and a video id on the images one is a `404`. The loop is here so
+that the thing you cannot guess is written once — **`Progress` is capped at 99 until the render is
+over**, so waiting for 100 waits one round trip past the answer. It yields when something changes,
+ends on the terminal document, and `VideoWatchOptions` moves the interval off its 2-second default.
+
+The fetch is **read-once**, exactly as an image's is: `410` with `video_expired` means the bytes
+existed and are gone — read, evicted, or past `expires_at` — which is a different thing from the
+`404` that says there was never a clip. `DeleteAsync` is OpenAI's `delete` and does both halves,
+cancel *and* drop; it is not `CancelJobAsync`'s bargain.
+
+Two routes of the dialect are refused by the hub and are therefore **not methods** here:
+
+```
+GET  /v1/videos             501 not_supported — a video id is itself the capability to fetch the
+                                                bytes, so this API hands out no way to enumerate
+POST /v1/videos/{id}/remix  501 not_supported — nothing durable holds the prompt that made a clip
+```
+
+To enumerate, call `ListJobsAsync` — `GET /api/videos/jobs`, the hub's own job vocabulary, so its
+rows are `MediaJob` with a bare GUID id rather than `Video` with a `video_…` one.
+`VideoIdentifier.ToVideoId` / `ToJobId` cross between them. To "remix", send a new request with the
+prompt you want. See `samples/VideoClip` for the whole create-watch-collect loop.
 
 ### Steering a request
 
