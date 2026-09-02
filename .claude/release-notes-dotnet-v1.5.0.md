@@ -136,6 +136,31 @@ is a `415` on a node, and the node writes `"error":null` where the coordinator o
 - **The conformance corpus does not exist yet** (phase 15). The new shapes were written into
   `spec/README.md` so that phase picks them up.
 
+## Verified from the published package
+
+`InferHub.Client 1.5.0` was installed **from nuget.org** into a clean console project that has never
+seen this working copy, and driven against a live InferHub 3.37.0 — the same solo node with
+retrieval on. Not the working copy, and not the test suite: a green suite says nothing about what
+was packed.
+
+`samples/Ingest`, copied in unchanged, ingested a document into a collection it provisioned, listed
+it, read its chunks and ran a hybrid reranked search. Then each claim above was checked one at a
+time:
+
+| Check | Result |
+|---|---|
+| A `partial` ingest is returned, not thrown | `IsPartial: true`, id `partial-probe` kept, `0/1` embedded, `"no node is advertising embedding model 'no-such-embed-model'"` surfaced |
+| The same bytes twice | `ingested` then `unchanged` |
+| A missing **document** | `null` |
+| A missing **collection** on search | threw `404 — collection '…' does not exist` |
+| `424` on search | `InferHubRetrievalException` with the hub's own sentence |
+| `index` on the chunks route | raw `"0"`, `IndexOrDefault` `0`, `page` `null` |
+| A file upload's name | became the document id — `verify-notes.md`, `ingested` |
+| `DeleteDocumentAsync` | `1` chunk, then `null` on the second call |
+
+The reranked multi-hit ordering was recorded and asserted against the corpus built earlier in the
+session rather than in this clean run, which held one document.
+
 ## Compatibility
 
 - **Wire:** InferHub 3.6+ for ingestion and search; recorded against 3.37.0. A hub or node with the
