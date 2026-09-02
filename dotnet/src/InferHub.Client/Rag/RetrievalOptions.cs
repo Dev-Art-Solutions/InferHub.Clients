@@ -32,4 +32,29 @@ public sealed class RetrievalOptions
 
     /// <summary>Embedding model used to vectorise the prompt — <c>X-InferHub-Retrieve-Model</c>. Server default when null.</summary>
     public string? Model { get; set; }
+
+    /// <summary>
+    /// Which retrieval mode grounds this call — <c>X-InferHub-Retrieve-Mode</c>, one of
+    /// <see cref="Models.Corpus.RetrievalModes"/>. Server default when null.
+    /// </summary>
+    /// <remarks>
+    /// An unknown value is a <c>400</c> from the hub naming the header, not a quiet fall back to
+    /// <see cref="Models.Corpus.RetrievalModes.Vector"/> — a caller who asked for hybrid and
+    /// silently got vector would draw the wrong conclusion from the answer. On
+    /// <c>POST /api/collections/{c}/search</c> the same choice is a <em>body field</em>: search
+    /// reads no <c>X-InferHub-*</c> header at all.
+    /// </remarks>
+    public string? Mode { get; set; }
+
+    /// <summary>
+    /// Rerank the retrieved chunks before grounding — <c>X-InferHub-Rerank</c>. Server default
+    /// when null.
+    /// </summary>
+    /// <remarks>
+    /// It costs a chat round trip on the hub, and it degrades quietly by design: with no rerank
+    /// model resolved, or on a timeout, the hub keeps the original order rather than failing the
+    /// call. So <c>true</c> is a request, not a guarantee, and nothing in the answer says whether
+    /// it ran.
+    /// </remarks>
+    public bool? Rerank { get; set; }
 }

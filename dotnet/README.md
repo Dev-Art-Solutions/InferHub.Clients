@@ -15,6 +15,14 @@ TypeScript and Go are planned; see the repository README for what each covers to
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
 
+> **v1.5.0** — **documents in, chunks out**: `IInferHubCorpusClient` covers
+> `/api/collections/{c}/documents` (upload as text or as a file, list, read the chunks, delete) and
+> `/api/collections/{c}/search` — the retrieval the RAG path runs, with the matches visible. Two
+> things worth knowing before you use it: a **partial ingest arrives as an HTTP `500` with a real
+> body** and is returned rather than thrown, and **a reranked answer is not in score order**, so the
+> hits come back exactly as the hub ranked them. `RetrievalOptions` also gained `Mode` and `Rerank`
+> for chat and generate. Additive: nothing in 1.4 changed. See [Ingestion and search](#ingestion-and-search).
+
 > **v1.4.0** — **video**, in OpenAI's own asynchronous dialect: `IInferHubVideoClient` covers
 > `POST /v1/videos`, the poll, the read-once `/content` and the `DELETE` that cancels *and* drops,
 > plus the one route that dialect lacks — `GET /api/videos/jobs`. Two of its routes are `501`s with
@@ -160,6 +168,22 @@ nor the conversation or retrieval headers, so one would send a header nothing re
 No `RemixAsync` and no `ListAsync`: the hub answers `501 not_supported` on both, with the reason in
 the sentence. A method that could only throw is a method somebody has to keep forever.
 
+`IInferHubCorpusClient` (client key — the same key, the same base address):
+
+| Method | Endpoint |
+|---|---|
+| `IngestTextAsync` | `POST /api/collections/{c}/documents` (JSON — `text` is the document) |
+| `IngestFileAsync` | `POST /api/collections/{c}/documents` (multipart — text, Markdown, HTML, JSON, PDF) |
+| `ListDocumentsAsync` | `GET /api/collections/{c}/documents` |
+| `GetDocumentAsync` | `GET /api/collections/{c}/documents/{id}` (→ `null` on 404) |
+| `GetChunksAsync` | `GET /api/collections/{c}/documents/{id}/chunks` (→ empty on 404) |
+| `DeleteDocumentAsync` | `DELETE /api/collections/{c}/documents/{id}` (→ `null` on 404) |
+| `SearchAsync` | `POST /api/collections/{c}/search` — **hits in the hub's order** |
+
+Ingesting is guarded by the **client** key, not the admin key. Creating and dropping collections is
+still admin work — except that a client whose key carries a collection scope provisions names inside
+that scope by ingesting into them.
+
 `IInferHubAdminClient` (admin key):
 
 | Method | Endpoint |
@@ -272,6 +296,95 @@ Console.WriteLine(string.Join(", ", grounded.SourceIds ?? []));  // retrieved re
 (`ForConversation("...")`). When retrieval is unavailable and the coordinator is configured
 with `OnMissing=error`, the call throws `InferHubRetrievalException` (a `424`). Calls
 without options behave exactly as before. See `samples/GroundedChat`.
+
+Since 1.5.0 `RetrievalOptions` also carries `Mode` (`vector` | `keyword` | `hybrid`) and `Rerank`,
+which travel as `X-InferHub-Retrieve-Mode` and `X-InferHub-Rerank`:
+
+```csharp
+var grounded = await client.ChatAsync(request, new InferHubCallOptions
+{
+    Retrieval = new RetrievalOptions("docs") { K = 4, Mode = RetrievalModes.Hybrid, Rerank = true }
+});
+```
+
+An unknown mode is a `400` naming the header rather than a silent fall back to `vector`. On the
+search route below, the same two choices are **body fields** — that route reads no `X-InferHub-*`
+header at all.
+
+### Ingestion and search
+
+Upload a document and the hub extracts its text, chunks it, embeds the chunks on the fleet and
+writes them to the collection. **It does not keep your file** — chunk text, a content hash and
+metadata, and nothing else.
+
+```csharp
+using InferHub.Client.Models.Corpus;
+
+var corpus = provider.GetRequiredService<IInferHubCorpusClient>();
+
+await using var file = File.OpenRead("employee-handbook.pdf");
+var result = await corpus.IngestFileAsync("handbook", new FileDocument
+{
+    Content  = file,                     // streamed, never buffered into a byte[]
+    FileName = "employee-handbook.pdf",  // the hub reads the extension, and stores it as `source`
+    Metadata = new Dictionary<string, string> { ["team"] = "platform" }
+});
+
+Console.WriteLine($"{result.Status}: {result.ChunksEmbedded}/{result.Chunks} chunks");
+```
+
+`Status` is `ingested`, `unchanged` (identical bytes already present — nothing was re-embedded) or
+`partial`.
+
+**A `partial` result arrives with HTTP `500` and is returned rather than thrown.** The hub answers
+an error status on purpose — a half-ingested document that claims success is worse than a failure —
+but the body is complete, the chunks that landed are really in the store, and re-posting the same
+bytes resumes rather than duplicating. A client that mapped every `5xx` onto an exception would
+throw away the document id needed to resume:
+
+```csharp
+if (result.IsPartial)
+{
+    Console.WriteLine($"{result.ChunksEmbedded}/{result.Chunks} embedded — {result.Error}");
+}
+```
+
+Re-uploading under the same id **replaces** that document's chunks rather than layering a second
+copy underneath, so sending a revision twice is safe. Omit `Id` and the hub falls back to the file
+name; omit both and it falls back to the content hash, which changes with every edit.
+
+Then search it, and see what the corpus would actually retrieve:
+
+```csharp
+var answer = await corpus.SearchAsync("handbook", new SearchRequest("how do I get an expense approved")
+{
+    Mode = RetrievalModes.Hybrid,
+    K = 3,
+    Rerank = true
+});
+
+foreach (var hit in answer.Hits)                      // in the hub's order — do not re-sort
+{
+    Console.WriteLine($"{hit.Score:F4}  {hit.DocumentId}  {hit.Text}");
+}
+```
+
+**`Hits` is ordered by the hub and `Score` is not the ranking key.** A rerank reorders the list and
+leaves every score as retrieval computed it, so a reranked answer routinely has its best hit
+carrying a *lower* score than the one below it — sorting by `Score` silently undoes the rerank you
+asked for and paid a chat round trip for. `Text` is the hub's own 280-character snippet; read
+`GetChunksAsync` for the whole chunk.
+
+A missing document is an absence — `GetDocumentAsync` answers `null`, `GetChunksAsync` an empty
+list, `DeleteDocumentAsync` `null`. A missing **collection** on `SearchAsync` throws, because
+answering "no hits" for a name with a typo in it is how a retrieval system reports an empty corpus
+as a working one.
+
+The refusals worth handling by name: `415` (a format the hub does not read — and a PDF sent to a
+standalone node or a node-owned collection, where the extractor does not ship), `422` (a format it
+reads that yielded no usable text — a scanned PDF is rejected rather than half-ingested, because
+there is no OCR and never will be), `413` (too large) and `424` on search
+(`InferHubRetrievalException` — no node holds the embedding model). See `samples/Ingest`.
 
 ### The OpenAI dialect
 

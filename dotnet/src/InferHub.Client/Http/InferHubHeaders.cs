@@ -15,6 +15,14 @@ internal static class InferHubHeaders
     public const string Retrieve = "X-InferHub-Retrieve";
     public const string RetrieveK = "X-InferHub-Retrieve-K";
     public const string RetrieveModel = "X-InferHub-Retrieve-Model";
+    public const string RetrieveMode = "X-InferHub-Retrieve-Mode";
+
+    /// <summary>
+    /// Rerank the retrieved chunks — on chat and generate only. The search route takes the same
+    /// choice as a <em>body field</em> and reads no headers.
+    /// </summary>
+    public const string Rerank = "X-InferHub-Rerank";
+
     public const string Provider = "X-InferHub-Provider";
     public const string ServedBy = "X-InferHub-Served-By";
     public const string Sources = "X-InferHub-Sources";
@@ -81,6 +89,19 @@ internal static class InferHubHeaders
         if (!string.IsNullOrWhiteSpace(retrieval.Model))
         {
             request.Headers.TryAddWithoutValidation(RetrieveModel, retrieval.Model);
+        }
+
+        // Sent as given rather than validated against a mode list this library keeps: the hub owns
+        // the set, it refuses an unknown one with a 400 naming the header, and a client that
+        // validated locally would reject a mode a newer hub understands.
+        if (!string.IsNullOrWhiteSpace(retrieval.Mode))
+        {
+            request.Headers.TryAddWithoutValidation(RetrieveMode, retrieval.Mode);
+        }
+
+        if (retrieval.Rerank is bool rerank)
+        {
+            request.Headers.TryAddWithoutValidation(Rerank, rerank ? "true" : "false");
         }
     }
 

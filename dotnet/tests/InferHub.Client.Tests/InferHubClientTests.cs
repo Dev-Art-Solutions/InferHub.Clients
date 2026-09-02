@@ -575,6 +575,42 @@ public class InferHubClientTests
         Assert.Equal("docs", headers.GetValues("X-InferHub-Retrieve").Single());
         Assert.False(headers.Contains("X-InferHub-Retrieve-K"));
         Assert.False(headers.Contains("X-InferHub-Retrieve-Model"));
+        Assert.False(headers.Contains("X-InferHub-Retrieve-Mode"));
+        Assert.False(headers.Contains("X-InferHub-Rerank"));
+    }
+
+    /// <summary>
+    /// Phase 12. The same two knobs the search route takes in its <em>body</em> are headers on
+    /// chat and generate, and the hub reads only the headers here.
+    /// </summary>
+    [Fact]
+    public async Task ChatAsync_sends_the_retrieve_mode_and_rerank_headers()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """{"model":"llama3","message":{"role":"assistant","content":"hi"},"done":true}""");
+
+        await client.ChatAsync(
+            new ChatRequest { Model = "llama3" },
+            new InferHubCallOptions { Retrieval = new RetrievalOptions("docs") { Mode = "hybrid", Rerank = true } });
+
+        var headers = handler.Requests[0].Headers;
+        Assert.Equal("hybrid", headers.GetValues("X-InferHub-Retrieve-Mode").Single());
+        Assert.Equal("true", headers.GetValues("X-InferHub-Rerank").Single());
+    }
+
+    /// <summary>
+    /// <c>Rerank = false</c> is a decision, not an absence: it turns off a deployment that defaults
+    /// <c>Retrieval:Rerank=llm</c>, and the hub parses the word rather than the header's presence.
+    /// </summary>
+    [Fact]
+    public async Task ChatAsync_sends_rerank_false_rather_than_omitting_it()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """{"model":"llama3","message":{"role":"assistant","content":"hi"},"done":true}""");
+
+        await client.ChatAsync(
+            new ChatRequest { Model = "llama3" },
+            new InferHubCallOptions { Retrieval = new RetrievalOptions("docs") { Rerank = false } });
+
+        Assert.Equal("false", handler.Requests[0].Headers.GetValues("X-InferHub-Rerank").Single());
     }
 
     [Fact]

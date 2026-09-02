@@ -9,7 +9,7 @@
     <Title>InferHub.Client</Title>
     <Company>Dev Art Solutions</Company>
     <Authors>iovigi</Authors>
-    <Description>.NET client library for InferHub — a self-hosted, Ollama-compatible LLM inference mesh. Typed requests over HTTP, dependency-injection friendly, small surface. Point it at a coordinator and call chat, generate (blocking + streaming), embeddings, the vector data-plane (upsert/query/retrieve), opt-in RAG retrieval (grounded chat/generate with source ids), model listing and status from C#. A second interface covers the OpenAI-compatible dialect (/v1/chat/completions, /v1/completions, /v1/embeddings, /v1/models) and the provider steer; a third covers audio — transcription, subtitles, and speech you can stream as it is synthesised; a fourth covers images — generations, edits and variations, plus an async job seam with per-step progress over SSE and read-once content. The separate admin client covers fleet ops (list/cordon/drain/uncordon/deregister nodes), vector collection lifecycle (create/drop/rebuild) and the live admin event stream (SSE with reconnect).</Description>
+    <Description>.NET client library for InferHub — a self-hosted, Ollama-compatible LLM inference mesh. Typed requests over HTTP, dependency-injection friendly, small surface. Point it at a coordinator and call chat, generate (blocking + streaming), embeddings, the vector data-plane (upsert/query/retrieve), opt-in RAG retrieval (grounded chat/generate with source ids), model listing and status from C#. A second interface covers the OpenAI-compatible dialect (/v1/chat/completions, /v1/completions, /v1/embeddings, /v1/models) and the provider steer; a third covers audio — transcription, subtitles, and speech you can stream as it is synthesised; a fourth covers images — generations, edits and variations, plus an async job seam with per-step progress over SSE and read-once content; a fifth covers video in OpenAI's asynchronous Videos dialect, with a polled watch and read-once content; a sixth covers the document corpus — ingest text or a file, list documents, read their chunks, delete, and search a collection with vector, keyword or hybrid retrieval and optional reranking. The separate admin client covers fleet ops (list/cordon/drain/uncordon/deregister nodes), vector collection lifecycle (create/drop/rebuild) and the live admin event stream (SSE with reconnect).</Description>
     <PackageIcon>icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/Dev-Art-Solutions/InferHub.Clients</PackageProjectUrl>
@@ -17,7 +17,7 @@
     <RepositoryType>git</RepositoryType>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageTags>inferhub;ollama;llm;ai;client;sdk;dotnet;rag</PackageTags>
-    <PackageVersion>1.4.0</PackageVersion>
+    <PackageVersion>1.5.0</PackageVersion>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 

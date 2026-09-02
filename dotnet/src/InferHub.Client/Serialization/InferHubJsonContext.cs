@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using InferHub.Client.Models;
 using InferHub.Client.Models.Admin;
 using InferHub.Client.Models.Audio;
+using InferHub.Client.Models.Corpus;
 using InferHub.Client.Models.Images;
 using InferHub.Client.Models.Ollama;
 using InferHub.Client.Models.OpenAi;
@@ -72,6 +73,17 @@ namespace InferHub.Client.Serialization;
 [JsonSerializable(typeof(Video))]
 [JsonSerializable(typeof(VideoError))]
 [JsonSerializable(typeof(VideoDeletion))]
+[JsonSerializable(typeof(TextDocument))]
+[JsonSerializable(typeof(IngestResult))]
+[JsonSerializable(typeof(DocumentSummary))]
+[JsonSerializable(typeof(DocumentsResponse))]
+[JsonSerializable(typeof(DocumentChunk))]
+[JsonSerializable(typeof(ChunksResponse))]
+[JsonSerializable(typeof(DocumentDeletion))]
+[JsonSerializable(typeof(SearchRequest))]
+[JsonSerializable(typeof(SearchResponse))]
+[JsonSerializable(typeof(SearchHit))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(string[]))]
 internal sealed partial class InferHubJsonContext : JsonSerializerContext

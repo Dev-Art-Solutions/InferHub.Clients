@@ -29,7 +29,7 @@ plans/          build briefs. Gitignored except plans/CLAUDE.md, which is the fo
 ## Build / test / run
 
 ```powershell
-dotnet test dotnet/InferHub.Client.sln                 # 197 per TFM: 194 pass, 3 skip (env-gated integration)
+dotnet test dotnet/InferHub.Client.sln                 # 227 per TFM: 224 pass, 3 skip (env-gated integration)
 dotnet format dotnet/InferHub.Client.sln --verify-no-changes
 dotnet run --project dotnet/samples/BasicChat          # needs a coordinator on :5080
 ```
@@ -68,7 +68,11 @@ week. The bare `v0.1.0`–`v1.0.0` tags are the C# client's history and stay whe
    data-retention decision taken by a package on its consumer's behalf. This is the client-side half
    of the hub's rule 7.
 5. **Count, never content.** What a client logs is a status, a duration and a model id — never a
-   prompt, never a transcript, never the filename the caller chose.
+   prompt, never a transcript, never the filename the caller chose. This is about what a client
+   *records*, not what it sends: an image upload drops the file name because nothing needs it, and
+   a document upload sends it because the hub resolves the extractor from the extension, stores it
+   as each chunk's `source` and falls back to it for the document id. The difference is stated in
+   `FileDocument.FileName`'s own doc comment rather than left for a reader to infer.
 6. **A node is a base address, not a second client type.** A solo node serves the same paths with
    the same bodies, so pointing the same client at a node's address *is* the node client. The
    differences are made explicit rather than left as a 404 the caller decodes: `/api/version` and
@@ -99,6 +103,25 @@ week. The bare `v0.1.0`–`v1.0.0` tags are the C# client's history and stay whe
     published has to be kept, and a member that can only throw reads as "not implemented yet", which
     is the opposite of what the refusal says. What ships instead is the code
     (`VideoErrorCodes.NotSupported`), the alternative, and the recorded body in the test file.
+
+11. **An error status that carries an outcome is read, not thrown; an order the server chose is
+    preserved, not improved.** Two shapes on the corpus surface decide this, and both are recorded
+    in `spec/README.md`. A **partial ingest is an HTTP `500` with a complete body** — the hub uses
+    an error status because a half-ingested document that claims success is worse than a failure,
+    but the chunks that landed are real and re-posting the same bytes resumes, so
+    `IngestTextAsync`/`IngestFileAsync` return the `IngestResult` and only a body that is *not* a
+    partial result throws. The reflex — `5xx` means throw — loses the document id needed to resume.
+    And a **reranked search comes back in an order its own `score` field contradicts**: the
+    reranker sorts by what the model said and leaves the retrieval scores untouched, so sorting
+    `Hits` by `Score` silently undoes the rerank the caller paid a chat round trip for. The client
+    hands the list over in wire order and documents `Score` as *what retrieval scored, not what
+    ranked it*. Both are the same rule: **the server's judgement arrives in the shape it arrives
+    in, and a client that tidies it is deciding something it was not asked to decide.**
+12. **A 404 that names one thing is an absence; a 404 that names the container is an error.**
+    `GetDocumentAsync` → `null`, `GetChunksAsync` → empty, `DeleteDocumentAsync` → `null`. But
+    `SearchAsync` on a collection that does not exist **throws**: answering "no hits" for a name
+    with a typo in it is how a retrieval system reports an empty corpus as a working one, and it is
+    the failure a caller finds six months later.
 
 ## Testing discipline
 

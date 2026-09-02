@@ -34,9 +34,9 @@ Legend: **✓** served · **—** not served · *(auth)* which key opens it.
 | `POST /api/vector/{c}/upsert\|query\|retrieve` | ✓ | ✓ | |
 | `GET\|DELETE /api/vector/{c}/{id}` | ✓ | ✓ | `404` is a real answer, not an error |
 | `GET /api/collections` | — | ✓ | **node only** — the solo corpus it owns |
-| `POST /api/collections/{c}/documents` | ✓ | ✓ | multipart; streams through the hub rather than buffering |
+| `POST /api/collections/{c}/documents` | ✓ | ✓ | multipart (`file`, optional `id`, `metadata`, `model`) **or** JSON (`{ id?, text, contentType?, source?, model?, metadata? }`). `GET` on the same path lists; `GET`/`DELETE` on `/{id}` read and remove one |
 | `GET /api/collections/{c}/documents/{id}/chunks` | ✓ | ✓ | |
-| `POST /api/collections/{c}/search` | ✓ | ✓ | reranking via `X-InferHub-Rerank` |
+| `POST /api/collections/{c}/search` | ✓ | ✓ | `mode`, `k`, `rerank`, `model` and `embeddingModel` are **body fields**. This route reads no `X-InferHub-*` header at all |
 | `POST /api/tools/{capability}` | ✓ | ✓ | the capability seam — STT, TTS and the rest |
 | `POST /api/images/jobs` | ✓ | ✓ | async: `queued → running → succeeded\|failed\|cancelled` |
 | `GET /api/images/jobs/{id}` | ✓ | ✓ | |
@@ -65,7 +65,7 @@ ever sees. Loopback skips auth unless `Auth:RequireAuthForLoopback=true`.
 | `X-InferHub-Conversation` | chat, generate | opaque id; sticky routing. **Carries no content** |
 | `X-InferHub-Retrieve` | chat, generate | opt into RAG against a collection |
 | `X-InferHub-Retrieve-K`, `-Model`, `-Mode` | chat, generate | how much, embedded by what, and which retrieval mode |
-| `X-InferHub-Rerank` | search | rerank the matches |
+| `X-InferHub-Rerank` | chat, generate | rerank the retrieved chunks before grounding. **Not** on search — there it is a body field |
 | `X-InferHub-Provider` | chat, generate, `/v1/*` | steer this request to a named cloud provider. An unknown id is **refused and counted**, never silently ignored |
 | `X-InferHub-Image-*`, `X-InferHub-Video-*` | image, video | seed, steps, guidance, strength, projection, seam repair |
 | `X-InferHub-Mask-Convention` | image edits | which way round the mask reads |
@@ -165,6 +165,36 @@ a schema.
   serializer, distinguished by `capability`, and each output's `url` already points at its own
   content route (`/v1/videos/{id}/content` for a clip). A client type named for one modality is a
   rename waiting to happen.
+- **A reranked search answers in an order its own scores contradict.** The reranker sorts the
+  candidates by what the model said and leaves every `score` exactly as retrieval computed it, so a
+  reranked hit list routinely starts with a *lower* score than the hit below it — recorded from
+  3.37.0, where the top hit scores `0.0164` against the second's `0.0325`. The order is the answer;
+  a client that sorts by `score` to be tidy silently undoes the rerank its caller paid a chat round
+  trip for. Nothing in the response says whether reranking ran: with no rerank model resolved, on a
+  parse failure or on a timeout the hub keeps the original order and logs it.
+- **A partial ingest is an HTTP `500` carrying a complete body.** `POST …/documents` answers
+  `{"documentId":…,"status":"partial","chunks":1,"chunksEmbedded":0,"error":"no node is advertising
+  embedding model …"}` with a `500`, because a half-ingested document that claims success is worse
+  than a failure. The body is the outcome, not an error page: the chunks that embedded are in the
+  store and re-posting the same bytes resumes. A client that maps every `5xx` onto an exception
+  throws away the id it needs to resume. Recorded from 3.37.0.
+- **An ingest reports three words and a document reports two.** `status` on an ingest result is
+  `ingested` | `unchanged` | `partial`; `status` on a listed document is `complete` | `partial`,
+  derived at read time by comparing the chunks present against the count they claim. Only `partial`
+  is in both sets, and it means the same thing in each.
+- **`index` and `page` are strings on the chunks route and `page` is an `int` on a search hit** —
+  the same chunk of the same document, described in two types, because one route hands back chunk
+  metadata (a string map) and the other a parsed match. A client that types `index` as an `int`
+  fails to deserialize. Recorded from 3.37.0: `{"index":"0","page":null}`.
+- **`chunksEmbedded` can be `0` on a `partial`, and then there is no document at all.** When every
+  batch fails the document never lands, so the `500` names an id that `GET …/documents/{id}`
+  answers `404` for. "Partial" is about the call, not a promise that something is retrievable.
+- **A document id defaults to the file name, then to the content hash.** So a caller who sets
+  neither gets a new document on every edit instead of a replaced one — and re-posting under the
+  same id *replaces* its chunks, because chunk ids derive from the document id and the chunk index.
+- **Where the vector store is off, these routes do not exist.** A hub with `VectorStore:Enabled=false`
+  answers `404` with an **empty body** on every `/api/collections/**` path — not `{"error":…}`. A
+  client that assumes a JSON envelope on a 404 surfaces an empty message. Recorded from 3.37.0.
 - **`data: [DONE]` is not JSON.** It ends the stream; deserializing it throws. And a stream that
   ends *without* it is a node that dropped: the hub already sent a terminal frame with
   `finish_reason: "stop"`, so the honest client keeps the partial answer rather than raising.

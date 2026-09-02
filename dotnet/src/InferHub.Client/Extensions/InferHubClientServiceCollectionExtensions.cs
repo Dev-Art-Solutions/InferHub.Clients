@@ -6,13 +6,17 @@ namespace InferHub.Client.Extensions;
 
 /// <summary>
 /// DI wiring for <see cref="IInferHubClient"/>, <see cref="IInferHubOpenAiClient"/>,
-/// <see cref="IInferHubAudioClient"/>, <see cref="IInferHubImagesClient"/>, <see cref="IInferHubVideoClient"/> and <see cref="IInferHubAdminClient"/>.
+/// <see cref="IInferHubAudioClient"/>, <see cref="IInferHubImagesClient"/>,
+/// <see cref="IInferHubVideoClient"/>, <see cref="IInferHubCorpusClient"/> and
+/// <see cref="IInferHubAdminClient"/>.
 /// </summary>
 public static class InferHubClientServiceCollectionExtensions
 {
     /// <summary>
     /// Register <see cref="IInferHubClient"/>, <see cref="IInferHubOpenAiClient"/>,
-    /// <see cref="IInferHubAudioClient"/>, <see cref="IInferHubImagesClient"/>, <see cref="IInferHubVideoClient"/> and <see cref="IInferHubAdminClient"/>, each with its own
+    /// <see cref="IInferHubAudioClient"/>, <see cref="IInferHubImagesClient"/>,
+    /// <see cref="IInferHubVideoClient"/>, <see cref="IInferHubCorpusClient"/> and
+    /// <see cref="IInferHubAdminClient"/>, each with its own
     /// typed <see cref="HttpClient"/> and bearer-auth <see cref="DelegatingHandler"/>. The
     /// inference clients send <see cref="InferHubClientOptions.ApiKey"/>; the admin client sends
     /// <see cref="InferHubClientOptions.AdminApiKey"/>. The admin and audio clients have
@@ -91,6 +95,18 @@ public static class InferHubClientServiceCollectionExtensions
         // then would abort the transfer of bytes that no longer exist anywhere else. Nothing on this
         // surface streams — the watch is a poll — so Options.Timeout governs every short call.
         services.AddHttpClient<IInferHubVideoClient, InferHubVideoClient>(client =>
+        {
+            client.BaseAddress = EnsureTrailingSlash(options.BaseAddress);
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        })
+        .AddHttpMessageHandler<TransientRetryHandler>()
+        .AddHttpMessageHandler<BearerAuthorizationHandler>();
+
+        // The corpus shares the address, the client key and the handler chain. Infinite here
+        // because an ingest is not a round trip: the hub extracts the document, chunks it and
+        // embeds every chunk on the fleet before it answers, so a 200-page PDF outlives the
+        // default 100 seconds. Options.Timeout is applied per call instead.
+        services.AddHttpClient<IInferHubCorpusClient, InferHubCorpusClient>(client =>
         {
             client.BaseAddress = EnsureTrailingSlash(options.BaseAddress);
             client.Timeout = Timeout.InfiniteTimeSpan;
