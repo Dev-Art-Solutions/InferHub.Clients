@@ -414,6 +414,314 @@ public class InferHubAdminClientTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.ListNodesAsync(cts.Token));
     }
 
+    // ----- Node profiles (phase 13) -----
+
+    [Fact]
+    public async Task ListProfilesAsync_parses_profiles()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """
+            [ { "name": "gpu-nodes", "revision": 3, "selector": { "labels": { "gpu": "true" } }, "maxConcurrency": 4 } ]
+            """);
+
+        var profiles = await client.ListProfilesAsync();
+
+        Assert.Single(profiles);
+        Assert.Equal("gpu-nodes", profiles[0].Name);
+        Assert.Equal(3, profiles[0].Revision);
+        Assert.Equal("true", profiles[0].Selector.Labels!["gpu"]);
+        Assert.Equal(4, profiles[0].MaxConcurrency);
+        Assert.EndsWith("api/admin/profiles", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task GetProfileAsync_returns_null_on_404()
+    {
+        var (client, _) = CreateClient(HttpStatusCode.NotFound, """{"error":"profile 'nope' not found"}""");
+        Assert.Null(await client.GetProfileAsync("nope"));
+    }
+
+    [Fact]
+    public async Task PutProfileAsync_sends_body_and_parses_applied_and_conflicts()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """
+            {
+              "profile": { "name": "gpu-nodes", "revision": 1, "selector": { "labels": { "gpu": "true" } }, "maxConcurrency": 4 },
+              "applied": ["n1"],
+              "conflicts": [ { "nodeId": "n2", "profiles": ["gpu-nodes", "other"] } ]
+            }
+            """);
+
+        var result = await client.PutProfileAsync("gpu-nodes", new NodeProfile
+        {
+            Selector = new NodeProfileSelector { Labels = new Dictionary<string, string> { ["gpu"] = "true" } },
+            MaxConcurrency = 4
+        });
+
+        Assert.Equal("gpu-nodes", result.Profile.Name);
+        Assert.Equal(1, result.Profile.Revision);
+        Assert.Equal(new[] { "n1" }, result.Applied);
+        Assert.Single(result.Conflicts);
+        Assert.Equal("n2", result.Conflicts[0].NodeId);
+        Assert.Equal(HttpMethod.Put, handler.Requests[0].Method);
+        Assert.EndsWith("api/admin/profiles/gpu-nodes", handler.Requests[0].RequestUri!.ToString());
+
+        var sent = JsonDocument.Parse(handler.RequestBodies[0]).RootElement;
+        Assert.Equal("true", sent.GetProperty("selector").GetProperty("labels").GetProperty("gpu").GetString());
+    }
+
+    [Fact]
+    public async Task PutProfileAsync_empty_selector_surfaces_400()
+    {
+        var (client, _) = CreateClient(HttpStatusCode.BadRequest,
+            """{"error":"a selector naming a nodeId or at least one label is required"}""");
+
+        var ex = await Assert.ThrowsAsync<InferHubException>(
+            () => client.PutProfileAsync("bad", new NodeProfile()));
+
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteProfileAsync_parses_reverted_nodes()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """{"deleted":"gpu-nodes","reverted":["n1"]}""");
+
+        var result = await client.DeleteProfileAsync("gpu-nodes");
+
+        Assert.Equal("gpu-nodes", result.Deleted);
+        Assert.Equal(new[] { "n1" }, result.Reverted);
+        Assert.Equal(HttpMethod.Delete, handler.Requests[0].Method);
+        Assert.EndsWith("api/admin/profiles/gpu-nodes", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task GetNodeProfileAsync_parses_desired_and_effective()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """
+            {
+              "nodeId": "n1", "name": "alpha", "assigned": "gpu-nodes", "revision": 3,
+              "status": "applied",
+              "effective": { "capabilities": ["chat", "embed"], "maxConcurrency": 4 },
+              "applied": ["maxConcurrency=4"], "refusals": [], "pending": [],
+              "reportedAtUtc": "2026-09-04T00:00:00Z"
+            }
+            """);
+
+        var state = await client.GetNodeProfileAsync("n1");
+
+        Assert.Equal("gpu-nodes", state.Assigned);
+        Assert.Equal("applied", state.Status);
+        Assert.Equal(4, state.Effective!.MaxConcurrency);
+        Assert.Equal(new[] { "chat", "embed" }, state.Effective.Capabilities);
+        Assert.EndsWith("api/admin/nodes/n1/profile", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task GetNodeProfileAsync_parses_refusals()
+    {
+        var (client, _) = CreateClient(HttpStatusCode.OK, """
+            {
+              "nodeId": "n1", "assigned": "gpu-nodes", "status": "refused",
+              "applied": [], "pending": [],
+              "refusals": [ { "item": "tools.image", "reason": "not in Tools:Allowed" } ]
+            }
+            """);
+
+        var state = await client.GetNodeProfileAsync("n1");
+
+        Assert.Equal("refused", state.Status);
+        Assert.Single(state.Refusals!);
+        Assert.Equal("tools.image", state.Refusals![0].Item);
+    }
+
+    // ----- Model lifecycle (phase 13) -----
+
+    [Theory]
+    [InlineData("pull")]
+    [InlineData("warm")]
+    public async Task PullOrWarmModelAsync_posts_to_the_right_endpoint(string kind)
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.Accepted,
+            $$"""{"nodeId":"n1","model":"llama3","kind":"{{kind}}","commandId":"cmd-1","reused":false}""");
+
+        var result = kind == "pull"
+            ? await client.PullModelAsync("n1", "llama3")
+            : await client.WarmModelAsync("n1", "llama3");
+
+        Assert.Equal("cmd-1", result.CommandId);
+        Assert.False(result.Reused);
+        Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
+        Assert.EndsWith($"api/admin/nodes/n1/models/llama3/{kind}", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task DeleteModelAsync_deletes_and_parses_result()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.Accepted,
+            """{"nodeId":"n1","model":"llama3","kind":"delete","commandId":"cmd-2","reused":true}""");
+
+        var result = await client.DeleteModelAsync("n1", "llama3");
+
+        Assert.True(result.Reused);
+        Assert.Equal(HttpMethod.Delete, handler.Requests[0].Method);
+        Assert.EndsWith("api/admin/nodes/n1/models/llama3", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task PullModelAsync_on_unmanageable_backend_surfaces_400()
+    {
+        var (client, _) = CreateClient(HttpStatusCode.BadRequest,
+            """{"error":"node 'n1' runs a backend that cannot manage models"}""");
+
+        var ex = await Assert.ThrowsAsync<InferHubException>(() => client.PullModelAsync("n1", "llama3"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task PullToolModelAsync_posts_to_the_tool_scoped_endpoint()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.Accepted,
+            """{"nodeId":"n1","tool":"diffusion","model":"sdxl","kind":"pull","commandId":"cmd-3","reused":false}""");
+
+        var result = await client.PullToolModelAsync("n1", "diffusion", "sdxl");
+
+        Assert.Equal("diffusion", result.Tool);
+        Assert.EndsWith("api/admin/nodes/n1/tools/diffusion/models/sdxl/pull", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task DeleteToolModelAsync_deletes_from_the_tool_scoped_endpoint()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.Accepted,
+            """{"nodeId":"n1","tool":"diffusion","model":"sdxl","kind":"delete","commandId":"cmd-4","reused":false}""");
+
+        await client.DeleteToolModelAsync("n1", "diffusion", "sdxl");
+
+        Assert.Equal(HttpMethod.Delete, handler.Requests[0].Method);
+        Assert.EndsWith("api/admin/nodes/n1/tools/diffusion/models/sdxl", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task ListModelMatrixAsync_parses_nodes_and_models()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """
+            {
+              "nodes": [ { "nodeId": "n1", "name": "alpha", "cordoned": false, "supportsModelManagement": true, "modelCount": 2 } ],
+              "models": [ { "name": "llama3", "sizeBytes": 4700000000, "nodes": ["n1"] } ]
+            }
+            """);
+
+        var matrix = await client.ListModelMatrixAsync();
+
+        Assert.Single(matrix.Nodes);
+        Assert.True(matrix.Nodes[0].SupportsModelManagement);
+        Assert.Single(matrix.Models);
+        Assert.Equal(4700000000, matrix.Models[0].SizeBytes);
+        Assert.EndsWith("api/admin/models", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task EnsureModelAsync_sends_replicas_query_and_parses_decision()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """
+            {
+              "model": "llama3", "requestedReplicas": 2,
+              "alreadyPresent": ["n1"],
+              "pulling": [ { "nodeId": "n2", "name": "beta", "commandId": "cmd-5", "reused": false } ],
+              "satisfied": true,
+              "decision": {
+                "effectiveTarget": 2, "nonManageableHolders": [], "eligibleCandidates": ["n2"],
+                "cordonedNodesSkipped": [], "shortfall": 0, "note": "target met"
+              }
+            }
+            """);
+
+        var result = await client.EnsureModelAsync("llama3", replicas: 2);
+
+        Assert.True(result.Satisfied);
+        Assert.Equal(2, result.Decision.EffectiveTarget);
+        Assert.Single(result.Pulling);
+        Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
+        Assert.EndsWith("api/admin/models/llama3/ensure?replicas=2", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task EnsureModelAsync_omits_replicas_when_not_given()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """
+            {
+              "model": "llama3", "requestedReplicas": 1, "alreadyPresent": [], "pulling": [], "satisfied": false,
+              "decision": { "effectiveTarget": 1, "nonManageableHolders": [], "eligibleCandidates": [], "cordonedNodesSkipped": [], "shortfall": 1, "note": "no eligible nodes" }
+            }
+            """);
+
+        await client.EnsureModelAsync("llama3");
+
+        Assert.EndsWith("api/admin/models/llama3/ensure", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    // ----- Usage and clients (phase 13) -----
+
+    [Fact]
+    public async Task QueryUsageAsync_with_no_filters_hits_the_bare_endpoint()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """{"rows":[]}""");
+
+        await client.QueryUsageAsync();
+
+        Assert.EndsWith("api/admin/usage", handler.Requests[0].RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task QueryUsageAsync_builds_the_query_string_and_parses_rows()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """
+            {
+              "from": "2026-09-01T00:00:00Z", "to": "2026-09-04T00:00:00Z",
+              "rows": [ { "clientId": "acme", "model": "llama3", "requests": 10, "promptTokens": 100, "completionTokens": 50, "totalTokens": 150, "fallbackRequests": 1 } ]
+            }
+            """);
+
+        var from = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
+        var to = new DateTimeOffset(2026, 9, 4, 0, 0, 0, TimeSpan.Zero);
+        var result = await client.QueryUsageAsync(from, to, clientId: "acme", model: "llama3");
+
+        Assert.Single(result.Rows);
+        Assert.Equal(150, result.Rows[0].TotalTokens);
+        Assert.Equal(1, result.Rows[0].FallbackRequests);
+
+        var uri = handler.Requests[0].RequestUri!.ToString();
+        Assert.Contains("clientId=acme", uri);
+        Assert.Contains("model=llama3", uri);
+        Assert.Contains("from=", uri);
+        Assert.Contains("to=", uri);
+    }
+
+    [Fact]
+    public async Task ListClientsAsync_parses_limits_and_live_usage()
+    {
+        var (client, handler) = CreateClient(HttpStatusCode.OK, """
+            [
+              {
+                "id": "acme",
+                "limits": { "maxConcurrent": 2, "requestsPerMinute": 60, "tokensPerMinute": 10000, "tokensPerDay": 200000, "allowedModels": ["llama3"] },
+                "live": { "inFlight": 1, "requestsLastMinute": 5, "tokensLastMinute": 300, "tokensToday": 4000 }
+              },
+              { "id": "anonymous", "limits": null, "live": { "inFlight": 0, "requestsLastMinute": 0, "tokensLastMinute": 0, "tokensToday": 0 } }
+            ]
+            """);
+
+        var clients = await client.ListClientsAsync();
+
+        Assert.Equal(2, clients.Count);
+        Assert.Equal(2, clients[0].Limits!.MaxConcurrent);
+        Assert.Equal(new[] { "llama3" }, clients[0].Limits!.AllowedModels);
+        Assert.Equal(4000, clients[0].Live.TokensToday);
+        Assert.Null(clients[1].Limits);
+        Assert.EndsWith("api/admin/clients", handler.Requests[0].RequestUri!.ToString());
+    }
+
     private sealed class NeverRespondingHandler : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

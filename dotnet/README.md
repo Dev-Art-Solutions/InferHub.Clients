@@ -15,6 +15,14 @@ TypeScript and Go are planned; see the repository README for what each covers to
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
 
+> **v1.6.0** — **admin catch-up**: `IInferHubAdminClient` gains node profiles (write, read, delete,
+> and what one node is actually doing with one), model lifecycle (pull/delete/warm, plus a tool's
+> own catalogue), the fleet-wide model × node matrix, `ensure`'s full placement reasoning, usage
+> aggregates and the configured-clients view — eleven new methods on the existing admin interface,
+> nothing new to register. `PutProfileAsync`'s `name`/`revision` are ignored by the hub on write —
+> it assigns both. Additive: nothing in 1.5 changed. See [Admin: profiles, model lifecycle, usage
+> and clients](#admin-profiles-model-lifecycle-usage-and-clients).
+
 > **v1.5.0** — **documents in, chunks out**: `IInferHubCorpusClient` covers
 > `/api/collections/{c}/documents` (upload as text or as a file, list, read the chunks, delete) and
 > `/api/collections/{c}/search` — the retrieval the RAG path runs, with the matches visible. Two
@@ -198,6 +206,15 @@ that scope by ingesting into them.
 | `DropCollectionAsync` | `DELETE /api/admin/vector/collections/{collection}` |
 | `RebuildAsync` | `POST /api/admin/vector/collections/{collection}/rebuild` |
 | `StreamAdminEventsAsync` | `GET /api/admin/stream` (SSE → `IAsyncEnumerable<AdminEvent>`) |
+| `ListProfilesAsync` / `GetProfileAsync` | `GET /api/admin/profiles` / `…/{name}` (→ `null` on 404) |
+| `PutProfileAsync` / `DeleteProfileAsync` | `PUT` / `DELETE /api/admin/profiles/{name}` |
+| `GetNodeProfileAsync` | `GET /api/admin/nodes/{nodeId}/profile` — desired beside effective |
+| `PullModelAsync` / `DeleteModelAsync` / `WarmModelAsync` | `POST …/models/{model}/pull` / `DELETE …/models/{model}` / `POST …/models/{model}/warm` |
+| `PullToolModelAsync` / `DeleteToolModelAsync` | the same three, scoped to `…/tools/{tool}/models/{model}` |
+| `ListModelMatrixAsync` | `GET /api/admin/models` — the fleet-wide model × node matrix |
+| `EnsureModelAsync` | `POST /api/admin/models/{model}/ensure` — full placement reasoning, not just a bool |
+| `QueryUsageAsync` | `GET /api/admin/usage` — aggregates only, never content |
+| `ListClientsAsync` | `GET /api/admin/clients` — ids, limits and live consumption; never a key |
 
 ### Streaming
 
@@ -653,6 +670,63 @@ await foreach (var ev in admin.StreamAdminEventsAsync(new AdminStreamOptions()))
 The `AdminStreamOptions` overload reconnects with exponential backoff when the stream
 drops (auth failures are never retried); the plain overload is a single connection. See
 `samples/FleetOps` for a runnable fleet walk-through.
+
+### Admin: profiles, model lifecycle, usage and clients
+
+Same interface, same admin key. A profile is *desired state*, never a command — the hub answers
+which nodes it now applies to, and a node's own configuration is always the ceiling: a profile can
+narrow a capability, a tool or a concurrency cap, and it can never widen one.
+
+```csharp
+using InferHub.Client.Models.Admin;
+
+// Write a profile — name and revision are the hub's, not yours (it overwrites both).
+var written = await admin.PutProfileAsync("gpu-nodes", new NodeProfile
+{
+    Selector = new NodeProfileSelector { Labels = new Dictionary<string, string> { ["gpu"] = "true" } },
+    MaxConcurrency = 4,
+    Tools = new Dictionary<string, bool> { ["diffusion"] = false }  // narrows only
+});
+
+Console.WriteLine($"'{written.Profile.Name}' rev {written.Profile.Revision} → {string.Join(", ", written.Applied)}");
+
+// What one node is actually doing with it — desired beside effective, and every refusal.
+var state = await admin.GetNodeProfileAsync("node-1");
+foreach (var refusal in state.Refusals ?? [])
+    Console.WriteLine($"refused {refusal.Item}: {refusal.Reason}");
+
+await admin.DeleteProfileAsync("gpu-nodes");  // every matched node reverts to its own config
+```
+
+Model lifecycle travels down the node's existing connection; progress rides the same
+`StreamAdminEventsAsync` stream as a `model-progress` event, so there is no second thing to poll:
+
+```csharp
+var pull = await admin.PullModelAsync("node-1", "llama3");
+Console.WriteLine($"command {pull.CommandId} (reused={pull.Reused})");
+
+// Ensure at least two nodes hold a model — pulls onto the eligible ones and says why.
+var ensured = await admin.EnsureModelAsync("llama3", replicas: 2);
+Console.WriteLine(ensured.Satisfied ? "target met" : ensured.Decision.Note);
+
+var matrix = await admin.ListModelMatrixAsync();  // fleet-wide model × node view
+```
+
+`PullToolModelAsync`/`DeleteToolModelAsync` are the same shape for a tool's own catalogue (e.g. a
+diffusion recipe) — the tool id is a route segment, not a model-name prefix.
+
+Usage and clients are read-only and carry no content — aggregates, ids and limits, never a key or a
+prompt:
+
+```csharp
+var usage = await admin.QueryUsageAsync(from: DateTimeOffset.UtcNow.AddDays(-7), clientId: "acme");
+foreach (var row in usage.Rows)
+    Console.WriteLine($"{row.Model}: {row.Requests} requests, {row.TotalTokens} tokens");
+
+var clients = await admin.ListClientsAsync();  // ids, limits, live window consumption — no keys
+```
+
+See `samples/FleetOps` for all of this in one runnable walk-through.
 
 ## Auth
 

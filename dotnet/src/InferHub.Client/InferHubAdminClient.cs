@@ -243,6 +243,180 @@ public sealed class InferHubAdminClient : IInferHubAdminClient
         }
     }
 
+    // ----- Node profiles (phase 13) -----
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<NodeProfile>> ListProfilesAsync(CancellationToken cancellationToken = default)
+    {
+        return await GetAsync("api/admin/profiles", Json.NodeProfileArray, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<NodeProfile?> GetProfileAsync(string name, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        using var timeout = StartRequestTimeout(cancellationToken, out var token);
+        using var response = await SendAsync(
+            () => httpClient.GetAsync($"api/admin/profiles/{Escape(name)}", token),
+            cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        await Http.InferHubResponse.EnsureSuccessAsync(response, token);
+        return await response.Content.ReadFromJsonAsync(Json.NodeProfile, token);
+    }
+
+    /// <inheritdoc/>
+    public async Task<PutProfileResult> PutProfileAsync(string name, NodeProfile profile, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(profile);
+
+        using var timeout = StartRequestTimeout(cancellationToken, out var token);
+        using var response = await SendAsync(
+            () => httpClient.PutAsJsonAsync($"api/admin/profiles/{Escape(name)}", profile, Json.NodeProfile, token),
+            cancellationToken);
+        await Http.InferHubResponse.EnsureSuccessAsync(response, token);
+        return await response.Content.ReadFromJsonAsync(Json.PutProfileResult, token)
+            ?? throw new InferHubException(response.StatusCode, "empty response body", string.Empty);
+    }
+
+    /// <inheritdoc/>
+    public async Task<DeleteProfileResult> DeleteProfileAsync(string name, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        using var timeout = StartRequestTimeout(cancellationToken, out var token);
+        using var response = await SendAsync(
+            () => httpClient.DeleteAsync($"api/admin/profiles/{Escape(name)}", token),
+            cancellationToken);
+        await Http.InferHubResponse.EnsureSuccessAsync(response, token);
+        return await response.Content.ReadFromJsonAsync(Json.DeleteProfileResult, token)
+            ?? throw new InferHubException(response.StatusCode, "empty response body", string.Empty);
+    }
+
+    /// <inheritdoc/>
+    public async Task<NodeProfileState> GetNodeProfileAsync(string nodeId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        return await GetAsync($"api/admin/nodes/{Escape(nodeId)}/profile", Json.NodeProfileState, cancellationToken);
+    }
+
+    // ----- Model lifecycle (phase 13) -----
+
+    /// <inheritdoc/>
+    public Task<ModelCommandAccepted> PullModelAsync(string nodeId, string model, CancellationToken cancellationToken = default)
+        => PostModelCommandAsync($"api/admin/nodes/{Escape(RequireNotBlank(nodeId, nameof(nodeId)))}/models/{Escape(RequireNotBlank(model, nameof(model)))}/pull", cancellationToken);
+
+    /// <inheritdoc/>
+    public async Task<ModelCommandAccepted> DeleteModelAsync(string nodeId, string model, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(model);
+
+        using var timeout = StartRequestTimeout(cancellationToken, out var token);
+        using var response = await SendAsync(
+            () => httpClient.DeleteAsync($"api/admin/nodes/{Escape(nodeId)}/models/{Escape(model)}", token),
+            cancellationToken);
+        await Http.InferHubResponse.EnsureSuccessAsync(response, token);
+        return await response.Content.ReadFromJsonAsync(Json.ModelCommandAccepted, token)
+            ?? throw new InferHubException(response.StatusCode, "empty response body", string.Empty);
+    }
+
+    /// <inheritdoc/>
+    public Task<ModelCommandAccepted> WarmModelAsync(string nodeId, string model, CancellationToken cancellationToken = default)
+        => PostModelCommandAsync($"api/admin/nodes/{Escape(RequireNotBlank(nodeId, nameof(nodeId)))}/models/{Escape(RequireNotBlank(model, nameof(model)))}/warm", cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<ModelCommandAccepted> PullToolModelAsync(string nodeId, string tool, string model, CancellationToken cancellationToken = default)
+        => PostModelCommandAsync(
+            $"api/admin/nodes/{Escape(RequireNotBlank(nodeId, nameof(nodeId)))}/tools/{Escape(RequireNotBlank(tool, nameof(tool)))}/models/{Escape(RequireNotBlank(model, nameof(model)))}/pull",
+            cancellationToken);
+
+    /// <inheritdoc/>
+    public async Task<ModelCommandAccepted> DeleteToolModelAsync(string nodeId, string tool, string model, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(tool);
+        ArgumentException.ThrowIfNullOrWhiteSpace(model);
+
+        using var timeout = StartRequestTimeout(cancellationToken, out var token);
+        using var response = await SendAsync(
+            () => httpClient.DeleteAsync($"api/admin/nodes/{Escape(nodeId)}/tools/{Escape(tool)}/models/{Escape(model)}", token),
+            cancellationToken);
+        await Http.InferHubResponse.EnsureSuccessAsync(response, token);
+        return await response.Content.ReadFromJsonAsync(Json.ModelCommandAccepted, token)
+            ?? throw new InferHubException(response.StatusCode, "empty response body", string.Empty);
+    }
+
+    /// <inheritdoc/>
+    public async Task<FleetModelMatrix> ListModelMatrixAsync(CancellationToken cancellationToken = default)
+    {
+        return await GetAsync("api/admin/models", Json.FleetModelMatrix, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<EnsureModelResult> EnsureModelAsync(string model, int? replicas = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(model);
+
+        var path = $"api/admin/models/{Escape(model)}/ensure" + (replicas is { } r ? $"?replicas={r}" : string.Empty);
+
+        using var timeout = StartRequestTimeout(cancellationToken, out var token);
+        using var response = await SendAsync(
+            () => httpClient.PostAsync(path, content: null, token),
+            cancellationToken);
+        await Http.InferHubResponse.EnsureSuccessAsync(response, token);
+        return await response.Content.ReadFromJsonAsync(Json.EnsureModelResult, token)
+            ?? throw new InferHubException(response.StatusCode, "empty response body", string.Empty);
+    }
+
+    // ----- Usage and clients (phase 13) -----
+
+    /// <inheritdoc/>
+    public async Task<UsageResponse> QueryUsageAsync(
+        DateTimeOffset? from = null,
+        DateTimeOffset? to = null,
+        string? clientId = null,
+        string? model = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>();
+        if (from is { } f) query.Add($"from={Uri.EscapeDataString(f.ToString("O"))}");
+        if (to is { } t) query.Add($"to={Uri.EscapeDataString(t.ToString("O"))}");
+        if (!string.IsNullOrWhiteSpace(clientId)) query.Add($"clientId={Uri.EscapeDataString(clientId)}");
+        if (!string.IsNullOrWhiteSpace(model)) query.Add($"model={Uri.EscapeDataString(model)}");
+
+        var path = "api/admin/usage" + (query.Count > 0 ? "?" + string.Join('&', query) : string.Empty);
+        return await GetAsync(path, Json.UsageResponse, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<ClientRow>> ListClientsAsync(CancellationToken cancellationToken = default)
+    {
+        return await GetAsync("api/admin/clients", Json.ClientRowArray, cancellationToken);
+    }
+
+    private async Task<ModelCommandAccepted> PostModelCommandAsync(string path, CancellationToken cancellationToken)
+    {
+        using var timeout = StartRequestTimeout(cancellationToken, out var token);
+        using var response = await SendAsync(
+            () => httpClient.PostAsync(path, content: null, token),
+            cancellationToken);
+        await Http.InferHubResponse.EnsureSuccessAsync(response, token);
+        return await response.Content.ReadFromJsonAsync(Json.ModelCommandAccepted, token)
+            ?? throw new InferHubException(response.StatusCode, "empty response body", string.Empty);
+    }
+
+    private static string RequireNotBlank(string value, string paramName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value, paramName);
+        return value;
+    }
+
     private static AdminEvent ParseEvent(string? eventName, string data)
     {
         try

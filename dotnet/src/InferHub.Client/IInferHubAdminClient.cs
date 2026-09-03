@@ -114,4 +114,138 @@ public interface IInferHubAdminClient
     /// <param name="options">Reconnect behaviour.</param>
     /// <param name="cancellationToken">Cancels the read loop; a cancelled token throws promptly.</param>
     IAsyncEnumerable<AdminEvent> StreamAdminEventsAsync(AdminStreamOptions options, CancellationToken cancellationToken = default);
+
+    // ----- Node profiles (phase 13) -----
+
+    /// <summary>List every stored profile — <c>GET /api/admin/profiles</c>.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<NodeProfile>> ListProfilesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Fetch one profile — <c>GET /api/admin/profiles/{name}</c>. Returns <c>null</c> when it does
+    /// not exist.
+    /// </summary>
+    /// <param name="name">Profile name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<NodeProfile?> GetProfileAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Write a profile — <c>PUT /api/admin/profiles/{name}</c>. Creates it if absent, replaces it
+    /// (and bumps its revision) if present. A profile whose <see cref="NodeProfileSelector"/> names
+    /// nothing is refused as <c>400</c>, surfaced as <see cref="Exceptions.InferHubException"/> —
+    /// this client does not pre-validate that, the hub is the authority (see this type's remarks).
+    /// <paramref name="profile"/>'s <see cref="NodeProfile.Name"/> and
+    /// <see cref="NodeProfile.Revision"/> are ignored; the hub sets both from the route and its own
+    /// counter regardless of what is sent.
+    /// </summary>
+    /// <param name="name">Profile name (the route segment — this wins over <see cref="NodeProfile.Name"/>).</param>
+    /// <param name="profile">The profile definition.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<PutProfileResult> PutProfileAsync(string name, NodeProfile profile, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Delete a profile — <c>DELETE /api/admin/profiles/{name}</c>. Every node it used to match is
+    /// re-asserted and reverts to its own configuration. Unknown profile → <c>404</c>, surfaced as
+    /// <see cref="Exceptions.InferHubException"/>.
+    /// </summary>
+    /// <param name="name">Profile name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<DeleteProfileResult> DeleteProfileAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// What one node is actually running against what a profile asked for —
+    /// <c>GET /api/admin/nodes/{nodeId}/profile</c>. Desired beside effective, and every refusal the
+    /// node reported. Unknown node → <c>404</c>, surfaced as <see cref="Exceptions.InferHubException"/>.
+    /// </summary>
+    /// <param name="nodeId">Node id.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<NodeProfileState> GetNodeProfileAsync(string nodeId, CancellationToken cancellationToken = default);
+
+    // ----- Model lifecycle (phase 13) -----
+
+    /// <summary>
+    /// Pull a model onto one node — <c>POST /api/admin/nodes/{nodeId}/models/{model}/pull</c>.
+    /// Progress rides <c>model-progress</c> frames on
+    /// <see cref="StreamAdminEventsAsync(System.Threading.CancellationToken)"/>. Unknown node →
+    /// <c>404</c>; a backend that cannot manage models → <c>400</c>, both surfaced as
+    /// <see cref="Exceptions.InferHubException"/>.
+    /// </summary>
+    /// <param name="nodeId">Node id.</param>
+    /// <param name="model">Model name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ModelCommandAccepted> PullModelAsync(string nodeId, string model, CancellationToken cancellationToken = default);
+
+    /// <summary>Remove a model from one node — <c>DELETE /api/admin/nodes/{nodeId}/models/{model}</c>.</summary>
+    /// <param name="nodeId">Node id.</param>
+    /// <param name="model">Model name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ModelCommandAccepted> DeleteModelAsync(string nodeId, string model, CancellationToken cancellationToken = default);
+
+    /// <summary>Load a model into memory on one node — <c>POST /api/admin/nodes/{nodeId}/models/{model}/warm</c>.</summary>
+    /// <param name="nodeId">Node id.</param>
+    /// <param name="model">Model name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ModelCommandAccepted> WarmModelAsync(string nodeId, string model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pull a model into one tool's own catalogue on one node —
+    /// <c>POST /api/admin/nodes/{nodeId}/tools/{tool}/models/{model}/pull</c>. Whether the tool
+    /// exists and is allowed is the node's own answer, arriving as a terminal error frame naming the
+    /// tool rather than a pre-check here.
+    /// </summary>
+    /// <param name="nodeId">Node id.</param>
+    /// <param name="tool">Tool id.</param>
+    /// <param name="model">Model name, in the tool's own catalogue.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ModelCommandAccepted> PullToolModelAsync(string nodeId, string tool, string model, CancellationToken cancellationToken = default);
+
+    /// <summary>Remove a model from one tool's catalogue on one node — <c>DELETE /api/admin/nodes/{nodeId}/tools/{tool}/models/{model}</c>.</summary>
+    /// <param name="nodeId">Node id.</param>
+    /// <param name="tool">Tool id.</param>
+    /// <param name="model">Model name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ModelCommandAccepted> DeleteToolModelAsync(string nodeId, string tool, string model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The fleet-wide model × node matrix — <c>GET /api/admin/models</c>. Which nodes hold each
+    /// model, and which nodes can manage models at all.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<FleetModelMatrix> ListModelMatrixAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ensure a model is held by at least <paramref name="replicas"/> nodes —
+    /// <c>POST /api/admin/models/{model}/ensure</c>. Pulls onto the most suitable
+    /// capable-and-manageable nodes that do not already have it, skipping cordoned ones. The result
+    /// carries the hub's full placement reasoning, not just whether it succeeded (this phase's D3).
+    /// </summary>
+    /// <param name="model">Model name.</param>
+    /// <param name="replicas">Desired replica count; defaults to 1 on the hub when omitted.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<EnsureModelResult> EnsureModelAsync(string model, int? replicas = null, CancellationToken cancellationToken = default);
+
+    // ----- Usage and clients (phase 13) -----
+
+    /// <summary>
+    /// Query usage aggregates — <c>GET /api/admin/usage</c>. Aggregates only, and could not carry a
+    /// prompt or a completion even if asked (hub 25 D3): the ledger holds counts alone.
+    /// </summary>
+    /// <param name="from">Inclusive lower bound, or <c>null</c> for no lower bound.</param>
+    /// <param name="to">Inclusive upper bound, or <c>null</c> for no upper bound.</param>
+    /// <param name="clientId">Filter to one client, or <c>null</c> for every client.</param>
+    /// <param name="model">Filter to one model, or <c>null</c> for every model.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<UsageResponse> QueryUsageAsync(
+        DateTimeOffset? from = null,
+        DateTimeOffset? to = null,
+        string? clientId = null,
+        string? model = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// List every configured named client with its limits and live window consumption —
+    /// <c>GET /api/admin/clients</c>. Never a key: see this type's remarks on <see cref="ClientRow"/>.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<ClientRow>> ListClientsAsync(CancellationToken cancellationToken = default);
 }
