@@ -1,12 +1,12 @@
-# Blog post — dotnet/v1.6.0, PARKED (devart MCP connector failed to connect, not the recoverable "Missing sessionId" blip)
+# Blog post — dotnet/v1.6.0, POSTED
 
-**Not yet posted.** Both `devart` and `devart.solutions` MCP servers refused the connection this
-session (`SdkHttpError dialing https://blog.devart.solutions/api/mcp?apiKey=REDACTED
-(CLIENT_HTTP_NOT_IMPLEMENTED)`) — a connection failure, not the transient `Missing sessionId`
-blip this repo has recovered from before by waiting it out. When the connector is reachable again:
-`list_posts` first to confirm the slug is free, then **one** `create_post`, visible in both fields —
-the connector is insert-only with a locking slug, so a draft that goes out wrong cannot be fixed,
-only replaced under a new slug.
+**Posted 2026-09-04**, live at
+<https://blog.devart.solutions/blog/inferhub-client-two-fields-the-hub-ignores> (ID
+`6a99fc1251ac07d60a7f2c3c`), EN visible / BG hidden. The connector had failed to connect earlier in
+the session (`SdkHttpError ... CLIENT_HTTP_NOT_IMPLEMENTED`); on retry in a later turn `list_posts`
+worked cleanly, confirmed the slug was free, and one `create_post` succeeded. `<div class="content">`
+shows entity-escaped `&lt;p&gt;` in the raw HTML, matching every prior post's stored shape — not a
+double-escaping bug (see [[devart-blog-connector-insert-only]]).
 
 - **slug**: `inferhub-client-two-fields-the-hub-ignores`
 - **title (en)**: InferHub.Client 1.6.0: two fields the hub ignores
