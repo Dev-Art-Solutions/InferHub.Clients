@@ -1,0 +1,150 @@
+{
+  "hubVersion": "3.37.0",
+  "notes": "Every recorded body here was copied from an existing InferHub.Client dotnet test literal, itself captured from a real hub or, where the test file says so, derived from the hub's own serializer/source. Nothing in this file was hand-typed from a schema. See conformance/README.md for the case schema and dotnet/tests/InferHub.Client.Tests/ConformanceCorpusTests.cs for the runner.",
+  "cases": [
+    {
+      "id": "node-status-rerank-is-a-string",
+      "kind": "probe",
+      "description": "A solo node's /api/status.retrieval.rerank is the config-level rerank MODE (\"none\"|\"llm\"), never a boolean. dotnet/v1.7.0 typed it bool? and threw a JsonException the first time it was driven against a real node with retrieval on; fixed in v1.7.1. This is the corpus's founding case: found by installing the published package and driving a real hub, not by reading the client.",
+      "request": { "method": "GET", "path": "/api/status" },
+      "response": {
+        "status": 200,
+        "body": "{\"mode\":\"solo\",\"nodeVersion\":\"3.37.0\",\"nowUtc\":\"2026-09-05T00:00:00Z\",\"name\":\"local-node\",\"backend\":{\"name\":\"ollama\",\"endpoint\":\"http://host.docker.internal:11434/\",\"health\":null},\"concurrency\":null,\"gpu\":{\"cuda\":false,\"devices\":0,\"names\":[]},\"capabilities\":[\"chat\",\"embed\"],\"retrieval\":{\"enabled\":true,\"provider\":\"local\",\"embeddingModel\":\"nomic-embed-text\",\"mode\":\"vector\",\"rerank\":\"none\",\"collections\":[]},\"models\":[]}"
+      },
+      "assert": { "kind": "solo-node", "nodeName": "local-node", "retrievalRerank": "none" }
+    },
+    {
+      "id": "hub-status-has-no-mode-field",
+      "kind": "probe",
+      "description": "The hub's /api/status carries no `mode` field at all, ever - that absence, not a value, is half of ProbeAsync's discriminator.",
+      "request": { "method": "GET", "path": "/api/status" },
+      "response": {
+        "status": 200,
+        "body": "{\"coordinatorVersion\":\"3.37.0\",\"nowUtc\":\"2026-09-05T00:00:00Z\",\"uptimeSeconds\":12.5,\"nodes\":[{\"nodeId\":\"n1\",\"name\":\"gpu-1\"}],\"models\":[{\"name\":\"llama3\"}]}"
+      },
+      "assert": { "kind": "hub", "nodeCount": 1 }
+    },
+    {
+      "id": "mid-stream-error-terminates-not-hangs",
+      "kind": "chat-stream",
+      "description": "NDJSON inference ends with {\"error\":...,\"done\":true} rather than a transport failure. A client that only checks `done` hangs; one that only checks HTTP status reports success.",
+      "request": { "method": "POST", "path": "/api/chat" },
+      "response": {
+        "status": 200,
+        "body": "{\"model\":\"llama3\",\"message\":{\"role\":\"assistant\",\"content\":\"partial\"},\"done\":false}\n{\"error\":\"node dropped mid-stream\",\"done\":true}\n"
+      },
+      "assert": { "kind": "stream-terminal-error", "partialChunks": 1, "errorMessage": "node dropped mid-stream" }
+    },
+    {
+      "id": "424-is-not-404",
+      "kind": "chat",
+      "description": "Retrieval asked for and unavailable is HTTP 424, a different condition from a missing model (404), and needs its own exception type.",
+      "request": { "method": "POST", "path": "/api/chat" },
+      "response": { "status": 424, "body": "{\"error\":\"retrieval unavailable\"}" },
+      "assert": { "kind": "throws-retrieval-exception" }
+    },
+    {
+      "id": "sources-header-json-array",
+      "kind": "chat",
+      "description": "X-InferHub-Sources arrives as a JSON array most of the time.",
+      "request": { "method": "POST", "path": "/api/chat" },
+      "response": {
+        "status": 200,
+        "headers": { "X-InferHub-Sources": "[\"doc-1\",\"doc-2\"]" },
+        "body": "{\"model\":\"llama3\",\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"done\":true}"
+      },
+      "assert": { "kind": "source-ids", "expected": ["doc-1", "doc-2"] }
+    },
+    {
+      "id": "sources-header-comma-fallback",
+      "kind": "chat",
+      "description": "A real hub has also sent X-InferHub-Sources comma-separated rather than as a JSON array. A client that only tries JSON.parse loses the ids on this shape - spec/README.md calls this the corpus's first case.",
+      "request": { "method": "POST", "path": "/api/chat" },
+      "response": {
+        "status": 200,
+        "headers": { "X-InferHub-Sources": "doc-1,doc-2" },
+        "body": "{\"model\":\"llama3\",\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"done\":true}"
+      },
+      "assert": { "kind": "source-ids", "expected": ["doc-1", "doc-2"] }
+    },
+    {
+      "id": "two-dialects-two-envelopes",
+      "kind": "openai-chat",
+      "description": "/api/* answers {\"error\":\"...\"}; /v1/* answers {\"error\":{\"message\":...,\"type\":...,\"param\":...,\"code\":...}} - an OpenAI SDK reads error.message. Which envelope arrived decides the exception type, never which method was called.",
+      "request": { "method": "POST", "path": "/v1/chat/completions" },
+      "response": {
+        "status": 400,
+        "body": "{\"error\":{\"message\":\"no provider 'openrouter' serves model 'gemma:2b' on this hub. The X-InferHub-Provider header can only choose among the providers already configured for a model; 'node' keeps the request on the fleet.\",\"type\":\"invalid_request_error\",\"param\":\"model\",\"code\":null}}"
+      },
+      "assert": { "kind": "throws-openai-exception", "errorType": "invalid_request_error", "param": "model", "code": null }
+    },
+    {
+      "id": "code-can-be-null-on-a-real-error",
+      "kind": "openai-chat",
+      "description": "The refused-steer 400 carries param but code:null. A client that treats a missing code as \"not an OpenAI envelope\" loses the message.",
+      "request": { "method": "POST", "path": "/v1/chat/completions" },
+      "response": {
+        "status": 400,
+        "body": "{\"error\":{\"message\":\"response_format=url is not supported: this coordinator never stores a generated image, so there is no URL to serve it from. Use response_format=b64_json.\",\"type\":\"invalid_request_error\",\"param\":\"response_format\",\"code\":null}}"
+      },
+      "assert": { "kind": "throws-openai-exception", "errorType": "invalid_request_error", "param": "response_format", "code": null }
+    },
+    {
+      "id": "503-capability-unavailable-carries-retry-after",
+      "kind": "openai-images-submit",
+      "description": "\"the fleet holds this model but nobody is doing this kind of work right now\" is 503 + Retry-After and worth retrying; a missing model is 404 with nothing to wait for. Not the same condition.",
+      "request": { "method": "POST", "path": "/api/images/jobs" },
+      "response": {
+        "status": 503,
+        "headers": { "Retry-After": "30" },
+        "body": "{\"error\":{\"message\":\"no node currently provides 'image' for model 'llava:latest'\",\"type\":\"api_error\",\"param\":null,\"code\":\"capability_unavailable\"}}"
+      },
+      "assert": { "kind": "throws-openai-exception", "errorCode": "capability_unavailable", "retryAfterSeconds": 30 }
+    },
+    {
+      "id": "streamed-usage-frame-has-empty-choices",
+      "kind": "openai-chat-stream",
+      "description": "A streamed /v1 frame with an empty choices array is the usage frame - the only place a streamed call reports token counts. A client that skips frames with no choices reports \"usage: not available\" for every stream.",
+      "request": { "method": "POST", "path": "/v1/chat/completions" },
+      "response": {
+        "status": 200,
+        "mediaType": "text/event-stream",
+        "body": "data: {\"id\":\"chatcmpl-cdf9c\",\"created\":1788036525,\"model\":\"gemma:2b\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hi\"},\"finish_reason\":null,\"logprobs\":null}],\"object\":\"chat.completion.chunk\"}\n\ndata: {\"id\":\"chatcmpl-cdf9c\",\"created\":1788036525,\"model\":\"gemma:2b\",\"choices\":[],\"usage\":{\"prompt_tokens\":24,\"completion_tokens\":8,\"total_tokens\":32},\"object\":\"chat.completion.chunk\"}\n\ndata: [DONE]\n\n"
+      },
+      "assert": { "kind": "stream-usage-frame", "promptTokens": 24, "totalTokens": 32 }
+    },
+    {
+      "id": "partial-ingest-is-a-500-with-a-body-not-thrown",
+      "kind": "ingest-text",
+      "description": "The hub answers a partial ingest with an error status on purpose, but the body is complete and the chunks that landed are real. A client that maps every 5xx onto an exception throws away the document id.",
+      "request": { "method": "POST", "path": "/api/collections/handbook/documents" },
+      "response": {
+        "status": 500,
+        "body": "{\"documentId\":\"z\",\"collection\":\"handbook\",\"status\":\"partial\",\"chunks\":1,\"chunksEmbedded\":0,\"bytes\":11,\"contentHash\":\"12998c017066eb0d2a70b94e6ed3192985855ce390f321bbdb832022888bd251\",\"error\":\"no node is advertising embedding model 'no-such-embed-model'\"}"
+      },
+      "assert": { "kind": "ingest-partial-returned", "documentId": "z", "chunksEmbedded": 0 }
+    },
+    {
+      "id": "reranked-search-order-contradicts-its-own-scores",
+      "kind": "search",
+      "description": "Reranking sorts by what a chat model said and leaves every score untouched, so a reranked hit list routinely starts with a LOWER score than the hit below it. A client that sorts by score to be tidy silently undoes the rerank its caller paid for.",
+      "request": { "method": "POST", "path": "/api/collections/handbook/search" },
+      "response": {
+        "status": 200,
+        "body": "{\"collection\":\"handbook\",\"mode\":\"hybrid\",\"hits\":[{\"id\":\"9e99656a7441cc1d2714af840b40357c2cd773946e9e13740879652ca61735aa\",\"score\":0.01639344262295082,\"documentId\":\"policy.txt\",\"text\":\"Payroll runs on the fifth working day.\"},{\"id\":\"96117a8f28a5027b1479bae903b56f7bcee5970ebfe81d6bec6806f0fc3c3a3f\",\"score\":0.03252247488101534,\"documentId\":\"onboarding\",\"text\":\"Error E-4021 means the coordinator refused a request.\"}]}"
+      },
+      "assert": { "kind": "hits-in-wire-order", "firstDocumentId": "policy.txt", "secondDocumentId": "onboarding" }
+    },
+    {
+      "id": "chunk-index-is-a-string-not-an-int",
+      "kind": "chunks",
+      "description": "The chunks route hands the chunk index back as a string (chunk metadata is a string map on the hub); a search hit's `page` is a real int on the same corpus. A client that types `index` as an int fails to deserialize.",
+      "request": { "method": "GET", "path": "/api/collections/handbook/documents/onboarding/chunks" },
+      "response": {
+        "status": 200,
+        "body": "{\"collection\":\"handbook\",\"documentId\":\"onboarding\",\"chunks\":[{\"id\":\"96117a8f\",\"index\":\"0\",\"page\":null,\"text\":\"chunk text\"}]}"
+      },
+      "assert": { "kind": "chunk-index-string", "expected": "0" }
+    }
+  ]
+}

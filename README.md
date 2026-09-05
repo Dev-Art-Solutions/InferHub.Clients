@@ -46,7 +46,7 @@ python/       planned
 js/           planned
 go/           planned
 spec/         the hub's client-facing surface, and the payloads recorded from a real hub
-conformance/  one language-agnostic case file every client is driven against (planned)
+conformance/  one language-agnostic case file every client is driven against (13 cases so far)
 ```
 
 `LICENSE` and `icon.png` are repository-level and shared by every package.

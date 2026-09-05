@@ -7,10 +7,14 @@ have to reshape somebody's xUnit fixtures to read it.
 > Recorded against InferHub **`3.37.0`**. The hub is the authority; when this file and the hub
 > disagree, the hub is right and this file is a bug.
 
-Phase 15 turns this folder into an executable conformance corpus (`conformance/cases.json` plus a
-thin runner per language). Until then it is documentation with one useful property: **it was copied
-from a real hub rather than from a client**, which is the difference between a corpus that tests
-something and one that agrees with whatever it was derived from.
+**Phase 15 turned a first slice of this into an executable conformance corpus**
+(`conformance/cases.json`, 13 cases, plus the C# runner at
+`dotnet/tests/InferHub.Client.Tests/ConformanceCorpusTests.cs`). It is a start, not the whole list
+below: the highest-value shapes — the ones a second language would get wrong first — are cases now,
+extracted from the C# test suite's own recorded literals rather than re-typed. The rest of this
+document stays as the map for whichever case a later phase promotes next. **It was copied from a real
+hub rather than from a client**, which is the difference between a corpus that tests something and
+one that agrees with whatever it was derived from.
 
 ## Two targets, one surface
 
@@ -89,8 +93,12 @@ a schema.
   HTTP status reports success.
 - **`424 Failed Dependency` is not `404`.** Retrieval was asked for and is unavailable — a different
   condition from a missing model, and it needs its own exception type.
-- **`503` naming a capability** is what a solo embed against a vendor-typed node returns. Not a
-  timeout, not a 404.
+- **A vendor-typed node's missing capability is two different refusals, not one.** A backend that
+  structurally cannot serve it (no Anthropic embeddings API) is a permanent `501`, no `Retry-After`;
+  a capability an operator disabled (`Node:Capabilities:Disabled`) is a temporary `503` +
+  `Retry-After`. This file said "`503` naming the capability" for both until phase 14's live
+  verification found the split by reading `LocalApiEndpoints.BackendCannot` vs. `CapabilityDisabled`
+  — corrected here rather than left standing.
 - **Read-once content.** `/content` unlinks as it reads. Retrying a failed download gets nothing,
   and a client that helpfully retries destroys the only copy.
 - **`X-InferHub-Sources` in two shapes**, above.

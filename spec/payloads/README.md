@@ -8,11 +8,16 @@ inside `InferHubClientTests.cs`, `InferHubAdminClientTests.cs` and the three han
 them is not a `git mv` — it is an edit to eight test files, and phase 7's own acceptance test is
 that the same 85 tests pass **unchanged**.
 
-So the extraction belongs to **phase 15**, where the conformance corpus is built and where an
-extracted payload is verified by a runner rather than by whoever pasted it. Doing it here would
-produce a second copy of every literal with nothing checking that the two agree — which is exactly
-the drift the corpus exists to prevent.
+**Recorded deviation from the phase-7 plan above.** Phase 15 built the corpus as
+`conformance/cases.json` — each case carries its recorded `response.body` inline rather than as a
+separate file in this folder. A one-file-per-payload layout earns its keep once several languages'
+runners need to fetch the same bytes independently; with one runner (C#) so far, a second copy in
+this folder would be exactly the drift the corpus exists to prevent — the JSON file *is* the
+extraction, verified by the runner rather than by whoever pasted it. This folder stays empty and
+reserved: if a case's body becomes large enough to make `cases.json` unwieldy (a full SSE transcript,
+a multi-KB job document), it moves here and `cases.json` references it by filename — a decision for
+whichever phase first needs it, not one to take pre-emptively.
 
-**What goes here, from phase 15 on:** one file per recorded response, named for the case that uses
-it, captured from a running InferHub and never hand-written. A payload somebody typed is a payload
-that agrees with what its author believed, which is the one thing a corpus must not do (15 D2).
+The C# test files (`InferHubClientTests.cs`, `InferHubOpenAiClientTests.cs`, and five more) still
+carry their own recorded literals for the cases phase 15 did not promote to the shared corpus — that
+extraction is unfinished, tracked in `conformance/README.md`, not silently abandoned.

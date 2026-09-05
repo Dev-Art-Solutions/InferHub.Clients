@@ -18,7 +18,7 @@ python/         planned (phase 16)
 js/             planned (phase 19)
 go/             planned (phase 22)
 spec/           the hub's client-facing surface, and response bodies recorded from a real hub
-conformance/    one language-agnostic case file every client is driven against (phase 15)
+conformance/    one language-agnostic case file every client is driven against (13 cases, phase 15)
 plans/          build briefs. Gitignored except plans/CLAUDE.md, which is the format.
 .claude/        release notes and social drafts, per package
 .github/workflows/  one build + one release workflow per language, path-filtered
@@ -29,7 +29,7 @@ plans/          build briefs. Gitignored except plans/CLAUDE.md, which is the fo
 ## Build / test / run
 
 ```powershell
-dotnet test dotnet/InferHub.Client.sln                 # 227 per TFM: 224 pass, 3 skip (env-gated integration)
+dotnet test dotnet/InferHub.Client.sln                 # 272 per TFM: 269 pass, 3 skip (env-gated integration)
 dotnet format dotnet/InferHub.Client.sln --verify-no-changes
 dotnet run --project dotnet/samples/BasicChat          # needs a coordinator on :5080
 ```
