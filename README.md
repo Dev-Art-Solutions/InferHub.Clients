@@ -5,7 +5,7 @@ Ollama-compatible inference mesh. One repository, one hub surface, a client per 
 
 | Language | Package | Version | Status |
 |---|---|---|---|
-| **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.7.0` | shipping |
+| **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.7.1` | shipping |
 | **Python** — [`python/`](python/) | PyPI | — | planned |
 | **TypeScript** — [`js/`](js/) | npm | — | planned |
 | **Go** — [`go/`](go/) | `pkg.go.dev` | — | planned |
@@ -69,7 +69,7 @@ Full documentation: [`dotnet/README.md`](dotnet/README.md).
 
 ## Releases
 
-Tags are `<lang>/vX.Y.Z` — `dotnet/v1.7.0`, and `python/v0.1.0` when it exists. A Go module in a
+Tags are `<lang>/vX.Y.Z` — `dotnet/v1.7.1`, and `python/v0.1.0` when it exists. A Go module in a
 subdirectory only resolves from a tag prefixed with that subdirectory, so the scheme Go requires is
 the one every language uses. Each package versions independently; the bare `v0.1.0`–`v1.0.0` tags
 are the C# client's history from before this repository held more than one language.

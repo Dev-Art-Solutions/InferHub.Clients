@@ -1,18 +1,15 @@
-# Social copy — dotnet/v1.7.0 (Iliya posts these manually)
+# Social copy — dotnet/v1.7.0 + v1.7.1 (Iliya posts these manually)
 
-Verify at posting time, not from memory: that 1.7.0 is on nuget.org, and that `dotnet/samples/NodeTarget`
-runs against whatever you point it at. **Unlike every recent phase, nothing here was verified against
-a live target this session** — no coordinator or solo node was reachable. Every recorded body in the
-tests was reconstructed from reading the hub's own endpoint source (`LocalStatusEndpoints.cs`,
-`LocalCollectionEndpoints.cs`, `LocalApiEndpoints.cs`), not captured from a real response. If you can
-run `NodeTarget` against a real hub and a real solo node before posting, do that first and fold the
-result in — a `ProbeAsync` that returns the right `Kind` against both is the strongest claim this
-release can make and it has not been made yet.
+**Post about `1.7.1`, not `1.7.0`.** `1.7.0` shipped with a bug (`NodeStatusResponse.Retrieval.Rerank`
+typed as a bool when the real node sends a string) found by installing it from nuget.org and driving
+a real coordinator and a real solo node in Docker — the first live check this track has run. `1.7.1`
+is the fix, same day. Verify at posting time that `1.7.1` is the version on nuget.org before copying
+the line below.
 
 ## Facebook
 
-> InferHub.Client 1.7.0 is out, and it's the last stop on this client's catch-up with the hub: **a
-> node is a base address, not a second client.** A solo InferHub node already answered chat,
+> InferHub.Client 1.7.0/1.7.1 is out, and it's the last stop on this client's catch-up with the hub:
+> **a node is a base address, not a second client.** A solo InferHub node already answered chat,
 > generate, streaming, embeddings, vectors, RAG, the OpenAI dialect, audio, images, video and
 > ingestion exactly like a coordinator does — this release adds the one thing it couldn't do before:
 > tell you which one you're talking to.
@@ -25,13 +22,14 @@ release can make and it has not been made yet.
 > node has no admin plane to gate collection management behind. Call either against a coordinator and
 > you get a plain 404, which is correct: the route genuinely isn't there.
 >
-> And we caught our own mistake while writing this: our docs said a vendor-typed node refuses an
-> unsupported embed with a 503. Reading the hub's source said otherwise — a backend that structurally
-> can't do it (no Anthropic embeddings API) answers 501, permanently; a capability an operator turned
-> off answers 503 with a Retry-After, temporarily. Two different refusals, and we'd been saying one.
-> Fixed in the same release that found it.
+> And the honest part: we shipped `1.7.0` with a real bug in it. The retrieval status block's
+> `rerank` field is a string on a real node (`"none"`/`"llm"`) — we'd typed it as a bool, because no
+> node was reachable to check against when that phase was written. Installing `1.7.0` from nuget.org
+> into a clean directory and driving it against an actual solo node threw a `JsonException` on the
+> first call. `1.7.1`, same day, is the one-line fix — and the reason to run the install-from-registry
+> step every single time, not just when it's convenient.
 >
-> Additive, as always: nothing from 1.6 changed. 259 tests per target framework (256 pass, 3 gated
+> Additive otherwise: nothing from 1.6 changed. 259 tests per target framework (256 pass, 3 gated
 > skips), two dependencies, still AOT-clean.
 >
 > Package: nuget.org/packages/InferHub.Client
@@ -39,21 +37,20 @@ release can make and it has not been made yet.
 
 ## X
 
-**~272 characters.** Keep any edit under 280, counting the URL as 23 whatever its real length.
+**~275 characters.** Keep any edit under 280, counting the URL as 23 whatever its real length.
 
-> InferHub.Client 1.7.0 — a node is a base address, not a second client.
+> InferHub.Client 1.7.1 — a node is a base address, not a second client.
 >
-> ProbeAsync() reads /api/status once and tells you: coordinator, or solo node. Two node-only routes,
-> and a docs mistake we caught ourselves (501 vs 503 aren't the same refusal).
+> ProbeAsync() reads /api/status once and tells you: coordinator, or solo node. Shipped 1.7.0 with a
+> real bug (rerank is a string, not a bool) — caught by driving a live node, fixed same day as 1.7.1.
 >
 > nuget.org/packages/InferHub.Client
 
-Alternative, ~261, if the self-correction is the stronger hook:
+Alternative, ~268, if the honest-bug angle is the stronger hook on its own:
 
-> InferHub.Client 1.7.0 is out.
->
-> We said a vendor-typed node's missing capability was a 503. Reading the hub's own source said: no,
-> a structural refusal is 501, permanent — 503 is only for what an operator switched off. Fixed.
+> InferHub.Client 1.7.0 shipped with a bug: a node status field we'd typed as bool is really a string
+> on a real server. Found it by installing from nuget.org and driving an actual node. Fixed same day,
+> 1.7.1.
 >
 > nuget.org/packages/InferHub.Client
 
@@ -69,7 +66,7 @@ no capability cache, no admin-plane detection beyond the 404 it already is. The 
 new method (`ProbeAsync`) plus four small node-only routes, because the hard work (making a node
 serve the same client-facing surface as a coordinator) was already done, seven phases ago.
 
-Four things to include:
+Five things to include:
 
 - **`ProbeAsync`'s discriminator, and why it isn't the base address.** A caller cannot tell
   `http://localhost:5080` from `http://gpu-box:11434` — both are just a URL. The only honest signal
@@ -80,12 +77,17 @@ Four things to include:
 - **The corrected `CLAUDE.md` rule**, told straight: this project's own internal guidance said "503"
   for a vendor-typed refusal, and reading the hub's `LocalApiEndpoints.BackendCannot` vs.
   `CapabilityDisabled` showed two different HTTP statuses for two different conditions — one
-  permanent, one temporary. Say plainly that `InferHubException` already modelled both
-  (`StatusCode` + `RetryAfter`) and no new exception type was needed; only the claim was wrong.
+  permanent, one temporary.
 - **Why there's no `IInferHubNodeClient`.** It would duplicate every method on the existing interface
   to express one fact — that four of them are absent on whichever target this isn't — and it turns
   "same code, laptop or fleet" into a compile-time choice for what's actually a config value.
-- **What's honestly missing**: no live coordinator or solo node was reachable to verify `ProbeAsync`
-  against a real target of either kind this session. Say so plainly — every recorded test body came
-  from reading the hub's endpoint source, not from a captured response, which is a different and
-  weaker kind of evidence than most of this track's earlier phases.
+- **The `1.7.0` → `1.7.1` bug, as the headline honesty beat.** Say plainly: the phase brief for 1.7.0
+  admitted no live target was reachable to verify `ProbeAsync` against. The very next thing that
+  happened — installing the published package and driving a real solo node, which is a mandatory
+  release-ritual step, not optional diligence — found a real bug within minutes: `rerank` is a string
+  on the wire, not a bool. Immutable packages meant the fix had to be a new version, not an edit; 1.7.1
+  is that version, shipped the same day. This is a better story than "we tested it," because it shows
+  what the test that matters actually catches.
+- **What's still not covered**: this verification used one coordinator with one meshed node and one
+  freshly-started solo node container — not a fleet under load, not every capability combination. Say
+  so rather than imply exhaustive coverage.

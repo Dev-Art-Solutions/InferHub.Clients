@@ -15,6 +15,13 @@ TypeScript and Go are planned; see the repository README for what each covers to
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
 
+> **v1.7.1** — **patch**: `NodeStatusResponse.Retrieval.Rerank` was typed `bool?` in 1.7.0; a real
+> solo node's `/api/status` sends it as a string (`"none"`/`"llm"`, the config-level rerank mode),
+> which threw a `JsonException` reading `ProbeAsync`'s result. Found by installing 1.7.0 from
+> nuget.org and driving a real solo node — the first live check this track has run, since no node
+> was reachable when 1.7.0 shipped. Retyped to `string?`; no other member of the 1.7.0 surface was
+> affected. If you are on `1.7.0` and read `NodeStatusResponse.Retrieval`, upgrade.
+
 > **v1.7.0** — **a node is a target**: `ProbeAsync` reads one `GET /api/status` and tells you whether
 > you are holding a coordinator or a solo node; `GetNodeVersionAsync` and the `/api/collections`
 > lifecycle (`ListNodeCollectionsAsync`/`GetNodeCollectionAsync`/`CreateNodeCollectionAsync`/

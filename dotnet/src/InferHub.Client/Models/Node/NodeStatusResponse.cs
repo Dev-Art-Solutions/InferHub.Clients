@@ -123,9 +123,12 @@ public sealed class NodeRetrievalInfo
     [JsonPropertyName("mode")]
     public string? RetrievalMode { get; set; }
 
-    /// <summary>Whether reranking is on, when enabled.</summary>
+    /// <summary>Rerank mode, when enabled — <c>"none"</c> or <c>"llm"</c>, never a bool. Verified
+    /// against a real node: this is the config-level rerank <em>mode</em>
+    /// (<c>LocalRetrievalOptions.Retrieval.Rerank</c>), not the per-request <c>RetrievalOptions.Rerank</c>
+    /// flag chat/generate calls send — the two are named alike and are not the same field.</summary>
     [JsonPropertyName("rerank")]
-    public bool? Rerank { get; set; }
+    public string? Rerank { get; set; }
 
     /// <summary>The corpus's own collections, when enabled.</summary>
     [JsonPropertyName("collections")]

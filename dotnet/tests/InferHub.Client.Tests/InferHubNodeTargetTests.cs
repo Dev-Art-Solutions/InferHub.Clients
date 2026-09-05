@@ -67,14 +67,17 @@ public class InferHubNodeTargetTests
     [Fact]
     public async Task ProbeAsync_reads_a_solo_node_with_retrieval_enabled()
     {
+        // Recorded against a real solo node (inferhub-node:latest, retrieval enabled), 2026-09-05.
+        // "rerank" is a string ("none"|"llm"), never a bool — caught only by driving a live node;
+        // the first draft of this model (and this test) had it wrong as bool.
         var (client, _) = CreateClient(HttpStatusCode.OK, """
-            {"mode":"solo","nodeVersion":"3.37.0","nowUtc":"2026-09-05T00:00:00Z","name":"gpu-box-1",
-             "backend":{"name":"ollama","endpoint":"http://localhost:11434","health":null},
+            {"mode":"solo","nodeVersion":"3.37.0","nowUtc":"2026-09-05T00:00:00Z","name":"local-node",
+             "backend":{"name":"ollama","endpoint":"http://host.docker.internal:11434/","health":null},
              "concurrency":null,"gpu":{"cuda":false,"devices":0,"names":[]},
              "capabilities":["chat","embed"],
              "retrieval":{"enabled":true,"provider":"local","embeddingModel":"nomic-embed-text",
-                          "mode":"hybrid","rerank":true,
-                          "collections":[{"name":"docs","dimension":768,"distance":"cosine","records":412}]},
+                          "mode":"vector","rerank":"none",
+                          "collections":[{"name":"docs","dimension":8,"distance":"cosine","records":0}]},
              "models":[]}
             """);
 
@@ -84,11 +87,11 @@ public class InferHubNodeTargetTests
         Assert.True(retrieval.Enabled);
         Assert.Equal("local", retrieval.Provider);
         Assert.Equal("nomic-embed-text", retrieval.EmbeddingModel);
-        Assert.Equal("hybrid", retrieval.RetrievalMode);
-        Assert.True(retrieval.Rerank);
+        Assert.Equal("vector", retrieval.RetrievalMode);
+        Assert.Equal("none", retrieval.Rerank);
         var collection = Assert.Single(retrieval.Collections!);
         Assert.Equal("docs", collection.Name);
-        Assert.Equal(412, collection.Records);
+        Assert.Equal(0, collection.Records);
     }
 
     // ---- node-only endpoints ------------------------------------------------------------------
