@@ -6,7 +6,7 @@ Ollama-compatible inference mesh. One repository, one hub surface, a client per 
 | Language | Package | Version | Status |
 |---|---|---|---|
 | **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.7.1` | shipping |
-| **Python** — [`python/`](python/) | [`inferhub-client`](https://pypi.org/project/inferhub-client/) on PyPI | `0.1.0` | code done — PyPI publish pending |
+| **Python** — [`python/`](python/) | [`inferhub-client`](https://pypi.org/project/inferhub-client/) on PyPI | `0.1.0` | shipping (core) |
 | **TypeScript** — [`js/`](js/) | npm | — | planned |
 | **Go** — [`go/`](go/) | `pkg.go.dev` | — | planned |
 

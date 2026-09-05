@@ -14,7 +14,7 @@ changes the wire, and a question about *why* an endpoint behaves as it does is a
 
 ```
 dotnet/         the C# client — src/, tests/, samples/, its own solution and Directory.Build.props
-python/         the core client — src/, tests/, examples/ (v0.1.0, code done — PyPI publish pending)
+python/         the core client — src/, tests/, examples/ (v0.1.0, shipping on PyPI)
 js/             planned (phase 19)
 go/             planned (phase 22)
 spec/           the hub's client-facing surface, and response bodies recorded from a real hub
