@@ -76,8 +76,12 @@ week. The bare `v0.1.0`–`v1.0.0` tags are the C# client's history and stay whe
 6. **A node is a base address, not a second client type.** A solo node serves the same paths with
    the same bodies, so pointing the same client at a node's address *is* the node client. The
    differences are made explicit rather than left as a 404 the caller decodes: `/api/version` and
-   `/api/collections` exist only on a node, the whole admin plane only on a hub, and a solo embed
-   against a vendor-typed node is a `503` naming the capability.
+   `/api/collections` exist only on a node, the whole admin plane only on a hub, and `ProbeAsync`
+   reads `/api/status` once and tells a caller which kind of target it is (the node's document
+   carries `mode: "solo"`; the hub's carries no `mode` field at all). A solo embed against a
+   vendor-typed node's backend that structurally cannot serve it (no Anthropic embeddings API) is a
+   `501`, permanent; a capability an operator disabled is a `503` + `Retry-After`, temporary — two
+   different refusals, not one (phase 14, correcting this rule's earlier "503 naming the capability").
 7. **Read-once content is a stream the caller owns.** Image and video content endpoints unlink on
    read: the byte you did not keep is gone. Clients hand over the live response stream and say so;
    they never buffer somebody's 40 MB video into a `byte[]` to be friendly.

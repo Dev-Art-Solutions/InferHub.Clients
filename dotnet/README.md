@@ -15,6 +15,15 @@ TypeScript and Go are planned; see the repository README for what each covers to
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
 
+> **v1.7.0** — **a node is a target**: `ProbeAsync` reads one `GET /api/status` and tells you whether
+> you are holding a coordinator or a solo node; `GetNodeVersionAsync` and the `/api/collections`
+> lifecycle (`ListNodeCollectionsAsync`/`GetNodeCollectionAsync`/`CreateNodeCollectionAsync`/
+> `DropNodeCollectionAsync`) reach the two routes that exist only on a node. No new type: pointing
+> `IInferHubClient` at a node's own address already was the node client for everything else. A solo
+> embed a vendor-typed backend cannot serve at all is a permanent `501`; one an operator disabled is
+> a `503` with `Retry-After` — both already modelled by `InferHubException`. Additive: nothing in 1.6
+> changed. See [A node as a target](#a-node-as-a-target).
+
 > **v1.6.0** — **admin catch-up**: `IInferHubAdminClient` gains node profiles (write, read, delete,
 > and what one node is actually doing with one), model lifecycle (pull/delete/warm, plus a tool's
 > own catalogue), the fleet-wide model × node matrix, `ensure`'s full placement reasoning, usage
@@ -119,6 +128,10 @@ Console.WriteLine(chat.Message?.Content);
 | `DeleteRecordAsync` | `DELETE /api/vector/{collection}/{id}` (→ `false` on 404) |
 | `GetStatusAsync` | `GET /api/status` |
 | `PingAsync` | `GET /health` |
+| `ProbeAsync` | `GET /api/status` — discriminates hub vs. solo node, see [A node as a target](#a-node-as-a-target) |
+| `GetNodeVersionAsync` | `GET /api/version` — **node-only** |
+| `ListNodeCollectionsAsync` / `GetNodeCollectionAsync` | `GET /api/collections` / `…/{collection}` — **node-only** |
+| `CreateNodeCollectionAsync` / `DropNodeCollectionAsync` | `POST` / `DELETE /api/collections/{collection}` — **node-only** |
 
 Chat/generate (blocking and streaming) also take an optional `InferHubCallOptions` for
 per-call RAG retrieval, sticky conversation routing and the provider steer — see
@@ -727,6 +740,56 @@ var clients = await admin.ListClientsAsync();  // ids, limits, live window consu
 ```
 
 See `samples/FleetOps` for all of this in one runnable walk-through.
+
+### A node as a target
+
+A solo InferHub node serves nearly this whole surface identically to a coordinator — chat, generate,
+streaming, embeddings, the vector data-plane, RAG headers, the OpenAI dialect, audio, images, video
+and ingestion. Pointing `IInferHubClient` at a node's own address **is** the node client; there is no
+separate type. `ProbeAsync` tells you which one you are holding with a single `GET /api/status` —
+the node's document carries `mode: "solo"`, the hub's carries no `mode` field at all:
+
+```csharp
+var probe = await client.ProbeAsync();
+
+if (probe.Kind == InferHubTargetKind.SoloNode)
+{
+    var node = probe.NodeStatus!;
+    Console.WriteLine($"solo node '{node.Name}' — backend={node.Backend?.Name}, capabilities={string.Join(",", node.Capabilities ?? [])}");
+}
+else
+{
+    Console.WriteLine($"hub — {probe.HubStatus!.Nodes?.Count ?? 0} node(s) connected");
+}
+```
+
+Two routes exist **only** on a node — `GetNodeVersionAsync` (`GET /api/version`) and the collection
+lifecycle `ListNodeCollectionsAsync` / `GetNodeCollectionAsync` / `CreateNodeCollectionAsync` /
+`DropNodeCollectionAsync` (`/api/collections`), a client-key equivalent of the hub's admin-gated
+`IInferHubAdminClient.ListCollectionsAsync` — a node has no admin plane, so its lifecycle rides the
+same key as everything else it serves. Calling any of them against a hub is a plain `404`, and the
+whole admin plane is a plain `404` against a node — neither is a `403`, both are an absence.
+
+A solo embed against a backend that cannot serve it at all (an Anthropic-backed node, say) is a
+permanent `501`; against a capability an operator disabled it is a `503` with `Retry-After` —
+`InferHubException.StatusCode`/`RetryAfter` already distinguish the two, no new exception type:
+
+```csharp
+try
+{
+    await client.EmbedAsync(EmbedRequest.FromText("nomic-embed-text", "hello"));
+}
+catch (InferHubException ex) when (ex.StatusCode == HttpStatusCode.NotImplemented)
+{
+    Console.WriteLine($"permanent: {ex.Message}");        // wrong backend for this
+}
+catch (InferHubException ex) when (ex.StatusCode == HttpStatusCode.ServiceUnavailable)
+{
+    Console.WriteLine($"retry after {ex.RetryAfter}: {ex.Message}");  // operator turned it off
+}
+```
+
+See `samples/NodeTarget` for a runnable walk-through against either kind of target.
 
 ## Auth
 

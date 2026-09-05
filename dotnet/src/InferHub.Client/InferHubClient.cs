@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using InferHub.Client.Exceptions;
 using InferHub.Client.Models;
+using InferHub.Client.Models.Admin;
+using InferHub.Client.Models.Node;
 using InferHub.Client.Models.Ollama;
 using InferHub.Client.Models.Vector;
 using InferHub.Client.Serialization;
@@ -180,6 +182,89 @@ public sealed class InferHubClient : IInferHubClient
     public async Task<StatusResponse> GetStatusAsync(CancellationToken cancellationToken = default)
     {
         return await GetAsync("api/status", Json.StatusResponse, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<InferHubTargetProbe> ProbeAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync("api/status", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        using var doc = JsonDocument.Parse(body);
+        var isSoloNode = doc.RootElement.ValueKind == JsonValueKind.Object
+            && doc.RootElement.TryGetProperty("mode", out var mode)
+            && mode.ValueKind == JsonValueKind.String
+            && mode.GetString() == "solo";
+
+        if (isSoloNode)
+        {
+            var node = JsonSerializer.Deserialize(body, Json.NodeStatusResponse)
+                ?? throw new InferHubException(response.StatusCode, "empty response body", body);
+            return new InferHubTargetProbe { Kind = InferHubTargetKind.SoloNode, Version = node.NodeVersion, NodeStatus = node };
+        }
+
+        var hub = JsonSerializer.Deserialize(body, Json.StatusResponse)
+            ?? throw new InferHubException(response.StatusCode, "empty response body", body);
+        return new InferHubTargetProbe { Kind = InferHubTargetKind.Hub, Version = hub.CoordinatorVersion, HubStatus = hub };
+    }
+
+    /// <inheritdoc/>
+    public async Task<string> GetNodeVersionAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync("api/version", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var doc = await JsonDocument.ParseAsync(stream, default, cancellationToken);
+        return doc.RootElement.TryGetProperty("version", out var version) && version.ValueKind == JsonValueKind.String
+            ? version.GetString()!
+            : throw new InferHubException(response.StatusCode, "response had no 'version' field", string.Empty);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<CollectionInfo>> ListNodeCollectionsAsync(CancellationToken cancellationToken = default)
+    {
+        var envelope = await GetAsync("api/collections", Json.NodeCollectionsResponse, cancellationToken);
+        return envelope.Collections;
+    }
+
+    /// <inheritdoc/>
+    public async Task<CollectionInfo?> GetNodeCollectionAsync(string collection, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(collection);
+
+        using var response = await httpClient.GetAsync($"api/collections/{Escape(collection)}", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync(Json.CollectionInfo, cancellationToken)
+            ?? throw new InferHubException(response.StatusCode, "empty response body", string.Empty);
+    }
+
+    /// <inheritdoc/>
+    public async Task<CollectionInfo> CreateNodeCollectionAsync(string collection, int dimension, string? distance = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(collection);
+        var body = new NodeCreateCollectionRequest { Name = collection, Dimension = dimension, Distance = distance };
+        return await PostAsync("api/collections", body, Json.NodeCreateCollectionRequest, Json.CollectionInfo, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> DropNodeCollectionAsync(string collection, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(collection);
+
+        using var response = await httpClient.DeleteAsync($"api/collections/{Escape(collection)}", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        await EnsureSuccessAsync(response, cancellationToken);
+        return true;
     }
 
     private async Task<IReadOnlyList<VectorMatch>> SearchAsync(string collection, string action, VectorQuery query, CancellationToken cancellationToken)

@@ -1,11 +1,17 @@
 using InferHub.Client.Models;
+using InferHub.Client.Models.Admin;
+using InferHub.Client.Models.Node;
 using InferHub.Client.Models.Ollama;
 using InferHub.Client.Models.Vector;
 
 namespace InferHub.Client;
 
 /// <summary>
-/// Client for talking to an InferHub coordinator over its Ollama-compatible HTTP API.
+/// Client for talking to an InferHub coordinator <b>or a solo InferHub node</b> over its
+/// Ollama-compatible HTTP API. A node serves nearly this whole surface identically to a
+/// coordinator — pointing <see cref="Configuration.InferHubClientOptions.BaseAddress"/> at a
+/// node's own address <em>is</em> the node client (no separate type). <see cref="ProbeAsync"/>
+/// and the <c>Node*</c> methods below cover the difference: what exists on only one side.
 /// Covers blocking + streaming chat/generate, model listing, embeddings, the vector
 /// data-plane, status and health.
 /// </summary>
@@ -109,7 +115,12 @@ public interface IInferHubClient
     /// <see cref="EmbedRequest.FromTexts(string, IEnumerable{string})"/> for the common cases.
     /// Missing embedding node → <c>404</c>, bad body → <c>400</c>, node dropped mid-flight → <c>502</c>,
     /// all surfaced as <see cref="Exceptions.InferHubException"/>. An empty vector list on 200
-    /// is treated as a malformed response and thrown, never silently returned.
+    /// is treated as a malformed response and thrown, never silently returned. Against a solo node
+    /// whose backend has no embeddings API (a vendor-typed node, e.g. Anthropic-backed) this is a
+    /// <c>501</c> with no <see cref="Exceptions.InferHubException.RetryAfter"/> — permanent, point
+    /// the node at a different backend instead. Against one where an operator disabled the
+    /// capability it is a <c>503</c> with <see cref="Exceptions.InferHubException.RetryAfter"/> set —
+    /// temporary, the same field the fleet's own <c>capability_unavailable</c> uses.
     /// </summary>
     /// <param name="request">Embed request. <see cref="EmbedRequest.Model"/> is required.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -190,4 +201,58 @@ public interface IInferHubClient
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<bool> PingAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds out what the configured base address actually is — a coordinator or a solo node —
+    /// with one <c>GET /api/status</c>. The hub's document carries no <c>mode</c> field; a node's
+    /// always carries <c>mode: "solo"</c>. Use this instead of <see cref="GetStatusAsync"/> when the
+    /// target kind is not already known: <see cref="GetStatusAsync"/> deserializes into the hub's
+    /// shape regardless of which one answered, so fields unique to a node's document land only in
+    /// its extension data.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<InferHubTargetProbe> ProbeAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Node-only — <c>GET /api/version</c>. A coordinator has no such route and answers <c>404</c>.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<string> GetNodeVersionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Node-only collection lifecycle — <c>GET /api/collections</c>. A coordinator has no such
+    /// route (its equivalent is the admin-gated <c>IInferHubAdminClient.ListCollectionsAsync</c>)
+    /// and answers <c>404</c>.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<CollectionInfo>> ListNodeCollectionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Node-only — <c>GET /api/collections/{collection}</c>. Returns <c>null</c> when the
+    /// collection does not exist; a coordinator answers <c>404</c> for the route itself.
+    /// </summary>
+    /// <param name="collection">Collection name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<CollectionInfo?> GetNodeCollectionAsync(string collection, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Node-only — <c>POST /api/collections</c>. Most callers never need this: ingesting into a
+    /// name that does not exist provisions it and measures <paramref name="dimension"/> from the
+    /// first batch. Call this only to pin the dimension/distance up front. A name already in use →
+    /// <c>409</c>, a missing or non-positive dimension → <c>400</c>, both surfaced as
+    /// <see cref="Exceptions.InferHubException"/>.
+    /// </summary>
+    /// <param name="collection">Collection name.</param>
+    /// <param name="dimension">Vector dimension every record must match (&gt;= 1).</param>
+    /// <param name="distance">Distance metric, or <c>null</c> for the node's default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<CollectionInfo> CreateNodeCollectionAsync(string collection, int dimension, string? distance = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Node-only — <c>DELETE /api/collections/{collection}</c>. Returns <c>true</c> when a
+    /// collection was dropped, <c>false</c> when it did not exist.
+    /// </summary>
+    /// <param name="collection">Collection name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<bool> DropNodeCollectionAsync(string collection, CancellationToken cancellationToken = default);
 }

@@ -9,6 +9,12 @@ namespace InferHub.Client;
 /// surfaces admin methods. All routes live under <c>/api/admin/*</c> and are audited
 /// by the coordinator.
 /// </summary>
+/// <remarks>
+/// A solo node registers none of these routes, so pointing this client at a node's base address
+/// answers a plain <c>404</c> on every call — not a <c>403</c>, an absence. A node's own collection
+/// lifecycle is <c>GET/POST/DELETE /api/collections</c>, reached via <see cref="IInferHubClient"/>
+/// (client key) instead — see <see cref="IInferHubClient.ListNodeCollectionsAsync"/>.
+/// </remarks>
 public interface IInferHubAdminClient
 {
     /// <summary>

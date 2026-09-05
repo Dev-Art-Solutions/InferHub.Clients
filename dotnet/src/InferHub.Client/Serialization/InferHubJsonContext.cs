@@ -5,6 +5,7 @@ using InferHub.Client.Models.Admin;
 using InferHub.Client.Models.Audio;
 using InferHub.Client.Models.Corpus;
 using InferHub.Client.Models.Images;
+using InferHub.Client.Models.Node;
 using InferHub.Client.Models.Ollama;
 using InferHub.Client.Models.OpenAi;
 using InferHub.Client.Models.Videos;
@@ -93,6 +94,9 @@ namespace InferHub.Client.Serialization;
 [JsonSerializable(typeof(SearchRequest))]
 [JsonSerializable(typeof(SearchResponse))]
 [JsonSerializable(typeof(SearchHit))]
+[JsonSerializable(typeof(NodeStatusResponse))]
+[JsonSerializable(typeof(NodeCollectionsResponse))]
+[JsonSerializable(typeof(NodeCreateCollectionRequest))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(string[]))]

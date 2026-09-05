@@ -17,7 +17,7 @@
     <RepositoryType>git</RepositoryType>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageTags>inferhub;ollama;llm;ai;client;sdk;dotnet;rag</PackageTags>
-    <PackageVersion>1.6.0</PackageVersion>
+    <PackageVersion>1.7.0</PackageVersion>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
