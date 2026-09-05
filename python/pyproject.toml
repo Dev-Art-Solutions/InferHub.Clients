@@ -30,7 +30,12 @@ Repository = "https://github.com/Dev-Art-Solutions/InferHub.Clients"
 Issues = "https://github.com/Dev-Art-Solutions/InferHub.Clients/issues"
 
 [project.optional-dependencies]
-test = ["pytest>=7", "pytest-asyncio>=0.23", "ruff>=0.6"]
+# ruff pinned exactly, not >=: two different minor releases (0.15 -> 0.16) changed which lint
+# rules are on by default with nothing in this file changed, which broke CI twice in a row on an
+# unpinned version. A linter whose pass/fail depends on which version happened to install is not
+# a check, so this one is deterministic instead — bump it deliberately, in its own commit, when
+# there is a reason to.
+test = ["pytest>=7", "pytest-asyncio>=0.23", "ruff==0.15.13"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/inferhub_client"]
