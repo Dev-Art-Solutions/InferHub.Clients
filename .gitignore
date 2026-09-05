@@ -66,3 +66,17 @@ Thumbs.db
 # Local secrets / env
 *.env
 *.secrets
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+python/dist/
+python/build/
+python/.venv/
+.venv/

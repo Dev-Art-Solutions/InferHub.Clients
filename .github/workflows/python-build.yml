@@ -1,0 +1,48 @@
+name: python — build and test
+
+# Scoped to python/ so a C# or Go commit does not run this matrix, and so this workflow does not
+# become the one that "runs on everything" (mirrors dotnet-build.yml's own comment). spec/ and
+# conformance/ are in the paths because a payload the tests read is an input to this build.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'python/**'
+      - 'spec/**'
+      - 'conformance/**'
+      - '.github/workflows/python-build.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'python/**'
+      - 'spec/**'
+      - 'conformance/**'
+      - '.github/workflows/python-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: [ '3.9', '3.10', '3.11', '3.12', '3.13' ]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: pip install -e "./python[test]"
+
+      - name: Lint
+        run: |
+          ruff check python/src python/tests python/examples
+          ruff format --check python/src python/tests python/examples
+
+      - name: Test
+        run: pytest python/tests

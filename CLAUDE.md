@@ -14,7 +14,7 @@ changes the wire, and a question about *why* an endpoint behaves as it does is a
 
 ```
 dotnet/         the C# client — src/, tests/, samples/, its own solution and Directory.Build.props
-python/         planned (phase 16)
+python/         the core client — src/, tests/, examples/ (v0.1.0, code done — PyPI publish pending)
 js/             planned (phase 19)
 go/             planned (phase 22)
 spec/           the hub's client-facing surface, and response bodies recorded from a real hub
@@ -32,6 +32,11 @@ plans/          build briefs. Gitignored except plans/CLAUDE.md, which is the fo
 dotnet test dotnet/InferHub.Client.sln                 # 272 per TFM: 269 pass, 3 skip (env-gated integration)
 dotnet format dotnet/InferHub.Client.sln --verify-no-changes
 dotnet run --project dotnet/samples/BasicChat          # needs a coordinator on :5080
+
+pip install -e "./python[test]"
+pytest python/tests                                    # 31 pass, 9 skipped (corpus cases outside v0.1.0)
+ruff check python/src python/tests python/examples && ruff format --check python/src python/tests python/examples
+python python/examples/basic_chat.py                   # needs a coordinator on :5080
 ```
 
 The env-gated integration suite runs only when `INFERHUB_TEST_BASEADDRESS` is set (and hits a real

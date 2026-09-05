@@ -6,7 +6,7 @@ Ollama-compatible inference mesh. One repository, one hub surface, a client per 
 | Language | Package | Version | Status |
 |---|---|---|---|
 | **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.7.1` | shipping |
-| **Python** — [`python/`](python/) | PyPI | — | planned |
+| **Python** — [`python/`](python/) | [`inferhub-client`](https://pypi.org/project/inferhub-client/) on PyPI | `0.1.0` | code done — PyPI publish pending |
 | **TypeScript** — [`js/`](js/) | npm | — | planned |
 | **Go** — [`go/`](go/) | `pkg.go.dev` | — | planned |
 
@@ -20,9 +20,9 @@ Empty columns are the honest state, not an oversight — each one names the phas
 
 | Capability | C# | Python | TypeScript | Go |
 |---|---|---|---|---|
-| Chat & generate, blocking | ✓ | — | — | — |
-| Chat & generate, streaming | ✓ | — | — | — |
-| Embeddings (batch + legacy) | ✓ | — | — | — |
+| Chat & generate, blocking | ✓ | ✓ | — | — |
+| Chat & generate, streaming | ✓ | ✓ | — | — |
+| Embeddings (batch + legacy) | ✓ | ✓ | — | — |
 | Vector data plane (upsert/query/retrieve) | ✓ | — | — | — |
 | RAG retrieval, with source ids | ✓ | — | — | — |
 | Admin: fleet ops, collections, live SSE | ✓ | — | — | — |
@@ -34,7 +34,7 @@ Empty columns are the honest state, not an oversight — each one names the phas
 | Ingestion, documents, chunks, search & rerank | ✓ | — | — | — |
 | Admin: profiles, model lifecycle, usage | ✓ | — | — | — |
 | A node as a first-class target | ✓ | — | — | — |
-| Core client | ✓ | phase 16 | phase 19 | phase 22 |
+| Core client | ✓ | ✓ | phase 19 | phase 22 |
 | Retrieval | ✓ | phase 17 | phase 20 | phase 23 |
 | Modalities, admin, node, and 1.0 | ✓ (7–14 done) | phase 18 | phase 21 | phase 24 |
 
@@ -42,7 +42,7 @@ Empty columns are the honest state, not an oversight — each one names the phas
 
 ```
 dotnet/       the C# client, its tests and its runnable samples
-python/       planned
+python/       the Python client (core, v0.1.0), its tests and its runnable examples
 js/           planned
 go/           planned
 spec/         the hub's client-facing surface, and the payloads recorded from a real hub
