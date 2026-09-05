@@ -5,7 +5,7 @@ INFERHUB_BASE=http://localhost:5080/ INFERHUB_API_KEY=... python examples/embedd
 
 import os
 
-from inferhub_client import EmbedRequest, EmbeddingsRequest, InferHubClient
+from inferhub_client import EmbeddingsRequest, EmbedRequest, InferHubClient
 
 base_url = os.environ.get("INFERHUB_BASE", "http://localhost:5080/")
 api_key = os.environ.get("INFERHUB_API_KEY")

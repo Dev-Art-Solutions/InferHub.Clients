@@ -6,8 +6,8 @@ import pytest
 from inferhub_client import (
     ChatMessage,
     ChatRequest,
-    EmbedRequest,
     EmbeddingsRequest,
+    EmbedRequest,
     GenerateRequest,
     InferHubClient,
     InferHubError,

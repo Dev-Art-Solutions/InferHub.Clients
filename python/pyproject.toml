@@ -44,3 +44,10 @@ testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py39"
+
+[tool.ruff.lint]
+# Pinned explicitly rather than left to ruff's default selection: 0.16 started enabling `I`
+# (isort) by default where 0.15 did not, which broke CI on an unpinned `ruff>=0.6` the moment
+# the runner picked up a newer release with nothing in this file changed. Extending the default
+# set (E4, E7, E9, F) rather than replacing it.
+extend-select = ["I"]

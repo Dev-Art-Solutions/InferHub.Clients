@@ -16,10 +16,10 @@ from ._exceptions import InferHubError
 from ._models import (
     ChatRequest,
     ChatResponse,
-    EmbedRequest,
-    EmbedResponse,
     EmbeddingsRequest,
     EmbeddingsResponse,
+    EmbedRequest,
+    EmbedResponse,
     GenerateRequest,
     GenerateResponse,
     StatusResponse,
