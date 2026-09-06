@@ -32,11 +32,11 @@
 
 ## X
 
-**~270 characters.**
+**~262 characters, URL counted at its real length.**
 
-> inferhub-client 0.2.0: retrieval for the Python client — vectors, RAG headers, ingestion, search.
-> Found a header bug that broke multipart uploads before it shipped, by testing httpx's own request
-> building first. Verified live, one gap named honestly (vector plane off on the demo server).
+> inferhub-client 0.2.0: retrieval for Python — vectors, RAG headers, ingest, search. Found and
+> fixed a header bug that broke multipart uploads before it ever shipped. Verified live; one gap
+> named honestly (demo hub's vector plane is off).
 >
 > pypi.org/project/inferhub-client
 
