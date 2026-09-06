@@ -11,15 +11,41 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from ._exceptions import InferHubError
+from ._exceptions import InferHubError, InferHubRetrievalException
+from ._models import RetrievalOptions
 
 DEFAULT_BASE_URL = "http://localhost:5080/"
 
 
 def build_headers(api_key: Optional[str]) -> Dict[str, str]:
-    headers = {"Content-Type": "application/json"}
+    """No default ``Content-Type`` here (phase 17 finding): a client-level default header wins
+    over what ``httpx`` would otherwise compute per request, so a fixed ``application/json``
+    default silently broke multipart ingestion — ``httpx`` already sets the right content type for
+    ``json=`` and ``files=`` calls on its own when neither the client nor the call sets one."""
+
+    headers: Dict[str, str] = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+def build_retrieval_headers(options: Optional[RetrievalOptions]) -> Dict[str, str]:
+    """The five ``X-InferHub-Retrieve*``/``X-InferHub-Rerank`` headers for one chat/generate call.
+    A call-scoped concern kept off the request dataclass on purpose (phase 17 D1) — retrieval
+    applies to both ``chat`` and ``generate``, and folding it into either request's ``to_json()``
+    would mean the body serializer has to know to exclude a header-only field."""
+
+    if options is None:
+        return {}
+    headers: Dict[str, str] = {"X-InferHub-Retrieve": options.collection}
+    if options.k is not None:
+        headers["X-InferHub-Retrieve-K"] = str(options.k)
+    if options.model is not None:
+        headers["X-InferHub-Retrieve-Model"] = options.model
+    if options.mode is not None:
+        headers["X-InferHub-Retrieve-Mode"] = options.mode
+    if options.rerank is not None:
+        headers["X-InferHub-Rerank"] = str(options.rerank).lower()
     return headers
 
 
@@ -56,7 +82,10 @@ def raise_for_status(response: httpx.Response) -> None:
     message = _extract_error_message(body) or (
         f"InferHub request failed with status {response.status_code}."
     )
-    raise InferHubError(
+    error_cls = (
+        InferHubRetrievalException if response.status_code == 424 else InferHubError
+    )
+    raise error_cls(
         response.status_code, message, body, retry_after=_retry_after(response)
     )
 

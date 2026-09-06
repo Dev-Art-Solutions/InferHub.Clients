@@ -29,3 +29,14 @@ class InferHubError(Exception):
         return (
             f"InferHubError(status_code={self.status_code!r}, message={self.message!r})"
         )
+
+
+class InferHubRetrievalException(InferHubError):
+    """Raised on HTTP 424 — retrieval was asked for (``X-InferHub-Retrieve``) and is unavailable.
+
+    A distinct type from the base :class:`InferHubError` because 424 is not "the model is
+    missing" (404): the chat/generate call itself could have succeeded, but the retrieval step it
+    depended on could not. A caller catching this specifically can retry without retrieval; one
+    that catches only :class:`InferHubError` still works, since this is a subclass (conformance
+    case ``424-is-not-404``).
+    """

@@ -8,20 +8,35 @@
 
 from ._async_client import AsyncInferHubClient
 from ._client import InferHubClient
-from ._exceptions import InferHubError
+from ._exceptions import InferHubError, InferHubRetrievalException
 from ._models import (
     ChatMessage,
     ChatRequest,
     ChatResponse,
+    DocumentChunk,
+    DocumentChunksResponse,
+    DocumentDeletion,
+    DocumentSummary,
     EmbeddingsRequest,
     EmbeddingsResponse,
     EmbedRequest,
     EmbedResponse,
+    FileDocument,
     GenerateRequest,
     GenerateResponse,
+    IngestResult,
     ModelInfo,
+    RetrievalOptions,
+    SearchHit,
+    SearchRequest,
+    SearchResponse,
     StatusResponse,
     TagsResponse,
+    TextDocument,
+    VectorMatch,
+    VectorQuery,
+    VectorRecord,
+    VectorUpsert,
 )
 from ._version import __version__
 
@@ -30,6 +45,7 @@ __all__ = [
     "InferHubClient",
     "AsyncInferHubClient",
     "InferHubError",
+    "InferHubRetrievalException",
     "ChatMessage",
     "ChatRequest",
     "ChatResponse",
@@ -42,4 +58,19 @@ __all__ = [
     "ModelInfo",
     "TagsResponse",
     "StatusResponse",
+    "RetrievalOptions",
+    "VectorUpsert",
+    "VectorQuery",
+    "VectorMatch",
+    "VectorRecord",
+    "TextDocument",
+    "FileDocument",
+    "IngestResult",
+    "DocumentSummary",
+    "DocumentChunk",
+    "DocumentChunksResponse",
+    "DocumentDeletion",
+    "SearchRequest",
+    "SearchResponse",
+    "SearchHit",
 ]

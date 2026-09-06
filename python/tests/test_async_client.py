@@ -10,6 +10,11 @@ from inferhub_client import (
     EmbedRequest,
     GenerateRequest,
     InferHubError,
+    InferHubRetrievalException,
+    RetrievalOptions,
+    TextDocument,
+    VectorQuery,
+    VectorUpsert,
 )
 
 from .conftest import RecordingTransport
@@ -125,3 +130,65 @@ async def test_async_context_manager_does_not_close_a_caller_supplied_client():
         pass
     assert http.is_closed is False
     await http.aclose()
+
+
+# -- Phase 17: retrieval -----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_with_retrieval_sends_the_headers():
+    client, transport = make_client(
+        200,
+        '{"model":"llama3","message":{"role":"assistant","content":"hi"},"done":true}',
+    )
+    await client.chat(
+        ChatRequest(model="llama3", messages=[ChatMessage("user", "hi")]),
+        retrieval=RetrievalOptions(collection="docs", k=5),
+    )
+    sent = transport.requests[0].headers
+    assert sent["X-InferHub-Retrieve"] == "docs"
+    assert sent["X-InferHub-Retrieve-K"] == "5"
+
+
+@pytest.mark.asyncio
+async def test_424_raises_the_retrieval_specific_exception():
+    client, _ = make_client(424, '{"error":"retrieval unavailable"}')
+    with pytest.raises(InferHubRetrievalException):
+        await client.chat(
+            ChatRequest(model="llama3", messages=[]),
+            retrieval=RetrievalOptions(collection="docs"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_upsert_and_query_round_trip():
+    client, _ = make_client(200, '{"id":"v1","vector":[0.1,0.2]}')
+    record = await client.upsert("docs", VectorUpsert.from_vector("v1", [0.1, 0.2]))
+    assert record.id == "v1"
+
+    client2, _ = make_client(200, '{"matches":[{"id":"v1","score":0.9}]}')
+    matches = await client2.query("docs", VectorQuery.from_vector([0.1, 0.2]))
+    assert matches[0].id == "v1"
+
+
+@pytest.mark.asyncio
+async def test_ingest_text_partial_500_is_returned_not_raised():
+    client, _ = make_client(
+        500,
+        '{"documentId":"z","collection":"handbook","status":"partial","chunks":1,'
+        '"chunksEmbedded":0,"bytes":11}',
+    )
+    result = await client.ingest_text("handbook", TextDocument(id="z", text="x"))
+    assert result.status == "partial"
+
+
+@pytest.mark.asyncio
+async def test_search_keeps_wire_order():
+    client, _ = make_client(
+        200,
+        '{"collection":"handbook","mode":"hybrid","hits":['
+        '{"id":"a","score":0.01,"documentId":"policy.txt","text":"..."},'
+        '{"id":"b","score":0.03,"documentId":"onboarding","text":"..."}]}',
+    )
+    result = await client.search("handbook", "payroll")
+    assert [h.document_id for h in result.hits] == ["policy.txt", "onboarding"]

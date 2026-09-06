@@ -14,7 +14,7 @@ changes the wire, and a question about *why* an endpoint behaves as it does is a
 
 ```
 dotnet/         the C# client — src/, tests/, samples/, its own solution and Directory.Build.props
-python/         the core client — src/, tests/, examples/ (v0.1.0, shipping on PyPI)
+python/         core + retrieval — src/, tests/, examples/ (v0.2.0, shipping on PyPI)
 js/             planned (phase 19)
 go/             planned (phase 22)
 spec/           the hub's client-facing surface, and response bodies recorded from a real hub
@@ -34,7 +34,7 @@ dotnet format dotnet/InferHub.Client.sln --verify-no-changes
 dotnet run --project dotnet/samples/BasicChat          # needs a coordinator on :5080
 
 pip install -e "./python[test]"
-pytest python/tests                                    # 31 pass, 9 skipped (corpus cases outside v0.1.0)
+pytest python/tests                                    # 53 pass, 6 skipped (corpus cases outside v0.2.0)
 ruff check python/src python/tests python/examples && ruff format --check python/src python/tests python/examples
 python python/examples/basic_chat.py                   # needs a coordinator on :5080
 ```

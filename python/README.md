@@ -4,10 +4,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A small, typed Python client for [InferHub](https://github.com/Dev-Art-Solutions/InferHub) — a
-self-hosted, Ollama-compatible inference mesh. `v0.1.0` is the **core** surface: chat, generate
-(blocking and streaming), embeddings, model listing, status and health. Retrieval (vectors, RAG,
-ingestion, search) lands in `0.2.0`; modalities, admin and the node in `1.0.0` — see
-`plans/roadmap-polyglot-clients.md` for the shape of the rest of the track.
+self-hosted, Ollama-compatible inference mesh. The **core** surface (chat, generate, embeddings,
+model listing, status, health) shipped in `0.1.0`. `v0.2.0` adds **retrieval**: the vector
+data-plane, the `X-InferHub-Retrieve*` RAG headers, ingestion and search. Modalities, admin and the
+node land in `1.0.0` — see `plans/roadmap-polyglot-clients.md` for the shape of the rest of the
+track.
 
 **One dependency: `httpx`.** No pydantic — dataclasses do the job and every response type carries an
 `extra` dict for fields this version does not know about yet, the same escape hatch the C# client's
@@ -56,19 +57,64 @@ asyncio.run(main())
 sync-over-`asyncio.run` shim — the latter breaks the moment a sync call happens inside code that is
 already running an event loop, which is exactly where a web framework's request handler lives.
 
-## API surface (v0.1.0)
+## API surface
 
 | Method | Endpoint |
 |---|---|
 | `list_models()` | `GET /api/tags` |
-| `chat(request)` | `POST /api/chat` with `stream:false` |
-| `chat_stream(request)` | `POST /api/chat` with `stream:true` — an iterator/async iterator of `ChatResponse` |
-| `generate(request)` | `POST /api/generate` with `stream:false` |
-| `generate_stream(request)` | `POST /api/generate` with `stream:true` |
+| `chat(request, retrieval=None)` | `POST /api/chat` with `stream:false` |
+| `chat_stream(request, retrieval=None)` | `POST /api/chat` with `stream:true` — an iterator/async iterator of `ChatResponse` |
+| `generate(request, retrieval=None)` | `POST /api/generate` with `stream:false` |
+| `generate_stream(request, retrieval=None)` | `POST /api/generate` with `stream:true` |
 | `embed(request)` | `POST /api/embed` (batch — a string or a list of strings) |
 | `embed_legacy(request)` | `POST /api/embeddings` (legacy single prompt) |
 | `get_status()` | `GET /api/status` |
 | `ping()` | `GET /health` — `True`/`False`, never raises for a non-success status |
+| `upsert(collection, VectorUpsert)` | `POST /api/vector/{collection}/upsert` |
+| `query(collection, VectorQuery)` | `POST /api/vector/{collection}/query` |
+| `retrieve(collection, VectorQuery)` | `POST /api/vector/{collection}/retrieve` |
+| `get_record(collection, id)` | `GET /api/vector/{collection}/{id}` — `None` on 404 |
+| `delete_record(collection, id)` | `DELETE /api/vector/{collection}/{id}` — `bool` |
+| `ingest_text(collection, TextDocument)` | `POST /api/collections/{collection}/documents` |
+| `ingest_file(collection, FileDocument)` | same route, multipart |
+| `list_documents(collection)` | `GET /api/collections/{collection}/documents` |
+| `get_document(collection, id)` | `GET .../documents/{id}` — `None` on 404 |
+| `get_chunks(collection, id)` | `GET .../documents/{id}/chunks` |
+| `delete_document(collection, id)` | `DELETE .../documents/{id}` — `None` on 404 |
+| `search(collection, query_or_request)` | `POST /api/collections/{collection}/search` |
+
+## Retrieval (v0.2.0)
+
+```python
+from inferhub_client import ChatRequest, ChatMessage, RetrievalOptions
+
+answer = client.chat(
+    ChatRequest(model="llama3", messages=[ChatMessage(role="user", content="What is InferHub?")]),
+    retrieval=RetrievalOptions(collection="docs", k=5),
+)
+print(answer.message.content, answer.source_ids)
+```
+
+`retrieval` is a call-scoped keyword on `chat`/`generate`, not a field on the request body — it sets
+`X-InferHub-Retrieve*`/`X-InferHub-Rerank` for that call only. Retrieval asked for and unavailable is
+HTTP 424, raised as `InferHubRetrievalException` (a subclass of `InferHubError`, so catching the base
+type still works) — a different condition from a missing model (404).
+
+## Ingestion and search
+
+```python
+from inferhub_client import TextDocument
+
+client.ingest_text("docs", TextDocument(id="policy", text="Payroll runs on the fifth working day."))
+results = client.search("docs", "when does payroll run?")
+for hit in results.hits:            # kept in the hub's own wire order — never re-sorted by score
+    print(hit.document_id, hit.score, hit.text)
+```
+
+An ingest that lands **partially** answers HTTP 500 with a real body (`documentId`, `chunks`,
+`chunksEmbedded`, `error`) — `ingest_text`/`ingest_file` return an `IngestResult` for this case
+rather than raising, so the document id and the chunks that did land are not thrown away. A genuine
+server error (no `documentId`/`status` in the body) still raises `InferHubError` as normal.
 
 ## Streaming
 
@@ -114,16 +160,14 @@ lifecycle) land in `1.0.0`, mirroring the C# client's phase 14 (`14 D7`).
 
 ```
 pip install -e ".[test]"
-pytest                              # 31 pass, 9 skipped (cases outside v0.1.0's surface, see below)
+pytest                              # 53 pass, 6 skipped (cases outside v0.2.0's surface, see below)
 ruff check src tests examples
 ruff format --check src tests examples
 ```
 
 `tests/test_conformance.py` drives the shared corpus at `../conformance/cases.json` — the same file
 the C# client's `ConformanceCorpusTests.cs` reads. A case whose `kind` this client does not cover
-yet (retrieval, the node, the OpenAI dialect) is skipped with a named reason rather than silently
-omitted; four cases (the mid-stream terminal error, `424` vs `404`, both `X-InferHub-Sources`
-shapes) pass today, unmodified, because the corpus already knew the answer.
+yet (the node, the OpenAI dialect) is skipped with a named reason rather than silently omitted.
 
 ## License
 
