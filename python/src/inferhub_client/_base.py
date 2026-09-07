@@ -7,11 +7,15 @@ see ``python/README.md`` on why this is two classes and not one client with a sy
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional, Tuple
 
 import httpx
 
-from ._exceptions import InferHubError, InferHubRetrievalException
+from ._exceptions import (
+    InferHubError,
+    InferHubOpenAiException,
+    InferHubRetrievalException,
+)
 from ._models import RetrievalOptions
 
 DEFAULT_BASE_URL = "http://localhost:5080/"
@@ -64,6 +68,32 @@ def _extract_error_message(body: str) -> Optional[str]:
     return body
 
 
+def _parse_openai_envelope(
+    body: str,
+) -> Optional[Tuple[str, Optional[str], Optional[str], Optional[str]]]:
+    """``{"error":{"message":...,"type":...,"param":...,"code":...}}`` — the OpenAI dialect's
+    envelope, used by ``/v1/*`` and by routes that reuse its error shape (``/api/images/jobs``).
+    Returns ``None`` when the body is not this shape, so the caller falls back to the Ollama
+    dialect's plain-string envelope."""
+
+    try:
+        parsed = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    error = parsed.get("error") if isinstance(parsed, dict) else None
+    if not isinstance(error, dict):
+        return None
+    message = error.get("message")
+    if not isinstance(message, str):
+        message = body
+    return (
+        message,
+        error.get("code"),
+        error.get("param"),
+        error.get("type"),
+    )
+
+
 def _retry_after(response: httpx.Response) -> Optional[float]:
     header = response.headers.get("Retry-After")
     if not header:
@@ -75,19 +105,83 @@ def _retry_after(response: httpx.Response) -> Optional[float]:
 
 
 def raise_for_status(response: httpx.Response) -> None:
+    """Which envelope arrived decides the exception type, never which method was called (root
+    ``CLAUDE.md`` rule 9): a ``{"error":{...}}`` object raises :class:`InferHubOpenAiException`
+    with ``error_code``/``param`` intact, a ``{"error":"..."}"`` string raises the base
+    :class:`InferHubError` — the same function serves ``/api/*``, ``/v1/*`` and the image-job
+    routes that reuse the OpenAI shape without either surface hard-coding which applies. A 424
+    is always :class:`InferHubRetrievalException`, in both dialects (rule 9's own example)."""
+
     if response.is_success:
         return
 
     body = response.text
+    retry_after = _retry_after(response)
+
+    if response.status_code == 424:
+        message = _extract_error_message(body) or (
+            f"InferHub request failed with status {response.status_code}."
+        )
+        raise InferHubRetrievalException(
+            response.status_code, message, body, retry_after=retry_after
+        )
+
+    openai_error = _parse_openai_envelope(body)
+    if openai_error is not None:
+        message, code, param, error_type = openai_error
+        raise InferHubOpenAiException(
+            response.status_code,
+            message,
+            body,
+            error_code=code,
+            param=param,
+            error_type=error_type,
+            retry_after=retry_after,
+        )
+
     message = _extract_error_message(body) or (
         f"InferHub request failed with status {response.status_code}."
     )
-    error_cls = (
-        InferHubRetrievalException if response.status_code == 424 else InferHubError
-    )
-    raise error_cls(
-        response.status_code, message, body, retry_after=_retry_after(response)
-    )
+    raise InferHubError(response.status_code, message, body, retry_after=retry_after)
+
+
+def parse_sse_lines(
+    lines: Iterator[str],
+) -> Iterator[Tuple[Optional[str], Dict[str, Any]]]:
+    """Groups an SSE line stream (``response.iter_lines()``/``aiter_lines()``, fed in externally
+    since sync and async iterate differently) into ``(event, data)`` pairs on each blank-line
+    frame boundary — the mechanics phase 9's dotnet ``SseFrameReader`` shares between the speech
+    and admin streams. ``data:`` lines accumulate (multi-line payloads join with ``\\n``); a
+    comment line (``:``-prefixed) and any other field are ignored. A frame with no ``data:`` is
+    skipped rather than yielded as ``(event, {})``, since every InferHub SSE frame this client
+    reads carries a JSON payload."""
+
+    event: Optional[str] = None
+    data_lines: list = []
+    for line in lines:
+        if line == "":
+            if data_lines:
+                raw = "\n".join(data_lines)
+                try:
+                    data = json.loads(raw)
+                except (json.JSONDecodeError, ValueError):
+                    data = {"raw": raw}
+                yield event, data
+            event, data_lines = None, []
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("event:"):
+            event = line[len("event:") :].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[len("data:") :].strip())
+    if data_lines:
+        raw = "\n".join(data_lines)
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            data = {"raw": raw}
+        yield event, data
 
 
 def parse_ndjson_line(line: str) -> Optional[Dict[str, Any]]:

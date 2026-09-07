@@ -12,11 +12,24 @@ from pathlib import Path
 import httpx
 import pytest
 
-from inferhub_client import ChatRequest, InferHubError, InferHubRetrievalException
+from inferhub_client import (
+    ChatRequest,
+    InferHubError,
+    InferHubOpenAiException,
+    InferHubRetrievalException,
+)
 
 from .conftest import RecordingTransport
 
-_SUPPORTED_KINDS = {"chat", "chat-stream", "ingest-text", "search", "chunks"}
+_SUPPORTED_KINDS = {
+    "chat",
+    "chat-stream",
+    "ingest-text",
+    "search",
+    "chunks",
+    "probe",
+    "openai-images-submit",
+}
 
 
 def _find_cases_file() -> Path:
@@ -50,11 +63,39 @@ def test_case(case):
     kind = case["kind"]
     if kind not in _SUPPORTED_KINDS:
         pytest.skip(
-            f"'{kind}' is outside inferhub-client v0.2.0's surface (no node, no OpenAI dialect yet)"
+            f"'{kind}' is outside inferhub-client v1.0.0's surface (the OpenAI chat dialect is not "
+            "ported to Python — dotnet-only, phase 8)"
         )
 
     assert_kind = case["assert"]["kind"]
     client, _ = _client_for(case)
+
+    if kind == "probe":
+        result = client.probe()
+        if assert_kind == "solo-node":
+            assert result.kind == "solo_node"
+            assert result.node_status.name == case["assert"]["nodeName"]
+            assert (
+                result.node_status.retrieval.rerank == case["assert"]["retrievalRerank"]
+            )
+            assert isinstance(result.node_status.retrieval.rerank, str)
+            return
+        if assert_kind == "hub":
+            assert result.kind == "hub"
+            assert len(result.hub_status.nodes) == case["assert"]["nodeCount"]
+            return
+
+    if kind == "openai-images-submit":
+        from inferhub_client import ImageGenerationRequest
+
+        if assert_kind == "throws-openai-exception":
+            with pytest.raises(InferHubOpenAiException) as excinfo:
+                client.submit_image_generation(
+                    ImageGenerationRequest(model="llava:latest", prompt="x")
+                )
+            assert excinfo.value.error_code == case["assert"]["errorCode"]
+            assert excinfo.value.retry_after == case["assert"]["retryAfterSeconds"]
+            return
 
     if kind in ("chat", "chat-stream"):
         request = ChatRequest(model="llama3", messages=[])

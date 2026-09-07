@@ -6,7 +6,7 @@ Ollama-compatible inference mesh. One repository, one hub surface, a client per 
 | Language | Package | Version | Status |
 |---|---|---|---|
 | **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.7.1` | shipping |
-| **Python** — [`python/`](python/) | [`inferhub-client`](https://pypi.org/project/inferhub-client/) on PyPI | `0.2.0` | shipping (core + retrieval) |
+| **Python** — [`python/`](python/) | [`inferhub-client`](https://pypi.org/project/inferhub-client/) on PyPI | `1.0.0` | shipping (core, retrieval, audio, images, admin, node) |
 | **TypeScript** — [`js/`](js/) | npm | — | planned |
 | **Go** — [`go/`](go/) | `pkg.go.dev` | — | planned |
 
@@ -25,24 +25,24 @@ Empty columns are the honest state, not an oversight — each one names the phas
 | Embeddings (batch + legacy) | ✓ | ✓ | — | — |
 | Vector data plane (upsert/query/retrieve) | ✓ | ✓ | — | — |
 | RAG retrieval, with source ids | ✓ | ✓ | — | — |
-| Admin: fleet ops, collections, live SSE | ✓ | — | — | — |
+| Admin: fleet ops, collections, live SSE | ✓ | ✓ | — | — |
 | Transient retries, trim/AOT clean | ✓ | n/a | n/a | n/a |
 | OpenAI dialect (`/v1/*`) + provider steer | ✓ | — | — | — |
-| Audio — transcription and streamed speech | ✓ | — | — | — |
-| Images — sync, async jobs, read-once content | ✓ | — | — | — |
-| Video — the OpenAI dialect, read-once content | ✓ | — | — | — |
+| Audio — transcription and streamed speech | ✓ | ✓ | — | — |
+| Images — sync, async jobs, read-once content | ✓ | ✓ | — | — |
+| Video — the OpenAI dialect, read-once content | ✓ | — (taught refusal only, rule 10) | — | — |
 | Ingestion, documents, chunks, search & rerank | ✓ | ✓ | — | — |
-| Admin: profiles, model lifecycle, usage | ✓ | — | — | — |
-| A node as a first-class target | ✓ | — | — | — |
+| Admin: profiles, model lifecycle, usage | ✓ | ✓ | — | — |
+| A node as a first-class target | ✓ | ✓ | — | — |
 | Core client | ✓ | ✓ | phase 19 | phase 22 |
 | Retrieval | ✓ | ✓ | phase 20 | phase 23 |
-| Modalities, admin, node, and 1.0 | ✓ (7–14 done) | phase 18 | phase 21 | phase 24 |
+| Modalities, admin, node, and 1.0 | ✓ (7–14 done) | ✓ (18 done) | phase 21 | phase 24 |
 
 ## Layout
 
 ```
 dotnet/       the C# client, its tests and its runnable samples
-python/       the Python client (core + retrieval, v0.2.0), its tests and its runnable examples
+python/       the Python client (core, retrieval, audio, images, admin, node — v1.0.0), tests and examples
 js/           planned
 go/           planned
 spec/         the hub's client-facing surface, and the payloads recorded from a real hub
@@ -69,7 +69,7 @@ Full documentation: [`dotnet/README.md`](dotnet/README.md).
 
 ## Releases
 
-Tags are `<lang>/vX.Y.Z` — `dotnet/v1.7.1`, and `python/v0.1.0` when it exists. A Go module in a
+Tags are `<lang>/vX.Y.Z` — `dotnet/v1.7.1`, `python/v1.0.0`. A Go module in a
 subdirectory only resolves from a tag prefixed with that subdirectory, so the scheme Go requires is
 the one every language uses. Each package versions independently; the bare `v0.1.0`–`v1.0.0` tags
 are the C# client's history from before this repository held more than one language.

@@ -4,6 +4,7 @@ from typing import AsyncIterator, Optional
 
 import httpx
 
+from ._admin import _AsyncAdminMethodsMixin
 from ._base import (
     DEFAULT_BASE_URL,
     build_headers,
@@ -15,6 +16,7 @@ from ._base import (
 )
 from ._corpus import _AsyncCorpusMethodsMixin
 from ._exceptions import InferHubError
+from ._media import _AsyncMediaMethodsMixin
 from ._models import (
     ChatRequest,
     ChatResponse,
@@ -34,10 +36,13 @@ from ._models import (
 )
 
 
-class AsyncInferHubClient(_AsyncCorpusMethodsMixin):
+class AsyncInferHubClient(
+    _AsyncCorpusMethodsMixin, _AsyncMediaMethodsMixin, _AsyncAdminMethodsMixin
+):
     """Async client for an InferHub coordinator (or a solo node — same address, same client, see
-    ``python/README.md``). Covers the Ollama-dialect core surface: chat, generate (blocking and
-    streaming), embeddings, model listing, status and health.
+    ``python/README.md``). Covers the Ollama-dialect core surface (chat, generate, embeddings,
+    models, status, health), retrieval, audio, images and the admin/node planes — the async twin
+    of :class:`~inferhub_client._client.InferHubClient`.
     """
 
     def __init__(

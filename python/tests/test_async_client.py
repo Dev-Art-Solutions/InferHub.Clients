@@ -192,3 +192,96 @@ async def test_search_keeps_wire_order():
     )
     result = await client.search("handbook", "payroll")
     assert [h.document_id for h in result.hits] == ["policy.txt", "onboarding"]
+
+
+# -- Phase 18 spot checks: audio, images, admin, node (full coverage lives in the sync
+# test_audio.py/test_images.py/test_admin.py/test_node.py; the async mixins are thin twins of
+# the sync ones over the same _base.py plumbing, so these confirm the async wiring itself). ------
+
+
+@pytest.mark.asyncio
+async def test_async_transcribe_forces_verbose_json():
+    import io
+
+    from inferhub_client import TranscriptionRequest
+
+    client, transport = make_client(200, '{"text":"hi","segments":[]}')
+    request = TranscriptionRequest(
+        model="whisper", audio=io.BytesIO(b"fake"), filename="a.wav"
+    )
+    result = await client.transcribe(request)
+    assert result.text == "hi"
+    assert b"verbose_json" in transport.requests[0].content
+
+
+@pytest.mark.asyncio
+async def test_async_generate_image_parses_the_envelope():
+    from inferhub_client import ImageGenerationRequest
+
+    client, _ = make_client(200, '{"created":1,"data":[{"b64_json":"AAA="}]}')
+    result = await client.generate_image(
+        ImageGenerationRequest(model="sdxl", prompt="a lighthouse")
+    )
+    assert result.data[0].b64_json == "AAA="
+
+
+@pytest.mark.asyncio
+async def test_async_watch_image_job_stops_at_terminal_state():
+    body = (
+        'data: {"id":"j1","state":"running","capability":"image"}\n\n'
+        'data: {"id":"j1","state":"succeeded","capability":"image"}\n\n'
+    )
+    client, _ = make_client(200, body, media_type="text/event-stream")
+    frames = [f async for f in client.watch_image_job("j1")]
+    assert len(frames) == 2
+    assert frames[-1].state == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_async_list_nodes_and_cordon():
+    client, _ = make_client(200, '[{"nodeId":"n1"}]')
+    nodes = await client.list_nodes()
+    assert nodes[0].node_id == "n1"
+
+    cordon_client, transport = make_client(200, "")
+    await cordon_client.cordon("n1")
+    assert str(transport.requests[0].url).endswith("/api/admin/nodes/n1/cordon")
+
+
+@pytest.mark.asyncio
+async def test_async_probe_discriminates_hub_vs_node():
+    hub_client, _ = make_client(
+        200, '{"coordinatorVersion":"3.37.0","nodes":[],"models":[]}'
+    )
+    hub_result = await hub_client.probe()
+    assert hub_result.kind == "hub"
+
+    node_client, _ = make_client(
+        200,
+        '{"mode":"solo","nodeVersion":"3.37.0","capabilities":["chat"],'
+        '"retrieval":{"enabled":false,"rerank":"none"}}',
+    )
+    node_result = await node_client.probe()
+    assert node_result.kind == "solo_node"
+    assert node_result.node_status.retrieval.rerank == "none"
+
+
+@pytest.mark.asyncio
+async def test_async_stream_speech_yields_delta_and_done():
+    import base64
+
+    from inferhub_client import SpeechRequest
+
+    audio_b64 = base64.b64encode(b"\x00").decode()
+    body = (
+        f'event: speech.audio.delta\ndata: {{"audio":"{audio_b64}"}}\n\n'
+        'event: speech.audio.done\ndata: {"usage":'
+        '{"input_tokens":0,"output_tokens":0,"total_tokens":0}}\n\n'
+    )
+    client, _ = make_client(200, body, media_type="text/event-stream")
+    chunks = [
+        c async for c in client.stream_speech(SpeechRequest(model="piper", input="hi"))
+    ]
+    assert len(chunks) == 2
+    assert chunks[0].audio == b"\x00"
+    assert chunks[1].type == "speech.audio.done"

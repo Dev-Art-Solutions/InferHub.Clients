@@ -4,6 +4,7 @@ from typing import Iterator, Optional
 
 import httpx
 
+from ._admin import _AdminMethodsMixin
 from ._base import (
     DEFAULT_BASE_URL,
     build_headers,
@@ -15,6 +16,7 @@ from ._base import (
 )
 from ._corpus import _CorpusMethodsMixin
 from ._exceptions import InferHubError
+from ._media import _MediaMethodsMixin
 from ._models import (
     ChatRequest,
     ChatResponse,
@@ -34,11 +36,14 @@ from ._models import (
 )
 
 
-class InferHubClient(_CorpusMethodsMixin):
+class InferHubClient(_CorpusMethodsMixin, _MediaMethodsMixin, _AdminMethodsMixin):
     """Sync client for an InferHub coordinator (or a solo node — same address, same client, see
     ``python/README.md``). A thin façade over the same rules :class:`AsyncInferHubClient` uses
     (``_base.py``), for callers not already in an event loop. Covers the Ollama-dialect core
-    surface: chat, generate (blocking and streaming), embeddings, model listing, status and health.
+    surface (chat, generate, embeddings, models, status, health), retrieval, audio, images and
+    the admin/node planes — one client, every surface, per ``python/README.md``'s "why one class"
+    note. Admin and node-only methods need the right kind of address/key; see their own
+    docstrings for which.
     """
 
     def __init__(
