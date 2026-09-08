@@ -1,0 +1,59 @@
+{
+  "name": "inferhub-client",
+  "version": "0.1.0",
+  "description": "Client for InferHub, a self-hosted, Ollama-compatible inference mesh — chat, generate, embeddings, model listing, status/health (core surface, v0.1.0).",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/Dev-Art-Solutions/InferHub.Clients/tree/main/js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dev-Art-Solutions/InferHub.Clients.git",
+    "directory": "js"
+  },
+  "bugs": "https://github.com/Dev-Art-Solutions/InferHub.Clients/issues",
+  "keywords": [
+    "inferhub",
+    "ollama",
+    "llm",
+    "inference",
+    "chat"
+  ],
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

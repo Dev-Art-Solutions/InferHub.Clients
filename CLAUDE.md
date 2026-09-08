@@ -15,7 +15,7 @@ changes the wire, and a question about *why* an endpoint behaves as it does is a
 ```
 dotnet/         the C# client — src/, tests/, samples/, its own solution and Directory.Build.props
 python/         core + retrieval — src/, tests/, examples/ (v0.2.0, shipping on PyPI)
-js/             planned (phase 19)
+js/             the core client — src/, test/, examples/ (v0.1.0, shipping on npm)
 go/             planned (phase 22)
 spec/           the hub's client-facing surface, and response bodies recorded from a real hub
 conformance/    one language-agnostic case file every client is driven against (13 cases, phase 15)
@@ -37,6 +37,12 @@ pip install -e "./python[test]"
 pytest python/tests                                    # 53 pass, 6 skipped (corpus cases outside v0.2.0)
 ruff check python/src python/tests python/examples && ruff format --check python/src python/tests python/examples
 python python/examples/basic_chat.py                   # needs a coordinator on :5080
+
+npm --prefix js ci
+npm --prefix js run typecheck                          # tsc --noEmit
+npm --prefix js run build                               # tsup: dist/index.mjs + dist/index.cjs + .d.ts
+npm --prefix js test                                    # vitest run — 29 pass, 9 skipped (corpus cases outside v0.1.0)
+npx tsx js/examples/basic-chat.ts                       # needs a coordinator on :5080
 ```
 
 The env-gated integration suite runs only when `INFERHUB_TEST_BASEADDRESS` is set (and hits a real

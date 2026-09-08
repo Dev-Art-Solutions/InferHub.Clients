@@ -1,0 +1,55 @@
+name: js — build and test
+
+# Scoped to js/ so a C#, Python or Go commit does not run this matrix (mirrors python-build.yml's
+# own comment). spec/ and conformance/ are in the paths because a payload the tests read is an
+# input to this build.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'js/**'
+      - 'spec/**'
+      - 'conformance/**'
+      - '.github/workflows/js-build.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'js/**'
+      - 'spec/**'
+      - 'conformance/**'
+      - '.github/workflows/js-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [ 18, 20, 22 ]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: js/package-lock.json
+
+      - name: Install
+        working-directory: js
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: js
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: js
+        run: npm run build
+
+      - name: Test
+        working-directory: js
+        run: npm test
