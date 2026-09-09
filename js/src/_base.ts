@@ -10,7 +10,7 @@ import {
   InferHubOpenAiException,
   InferHubRetrievalException,
 } from "./errors.js";
-import type { JsonDict } from "./types.js";
+import type { JsonDict, RetrievalOptions } from "./types.js";
 
 export const DEFAULT_BASE_URL = "http://localhost:5080/";
 
@@ -25,6 +25,22 @@ export function buildHeaders(apiKey?: string): Record<string, string> {
   if (apiKey) {
     headers.Authorization = `Bearer ${apiKey}`;
   }
+  return headers;
+}
+
+/** The five `X-InferHub-Retrieve*`/`X-InferHub-Rerank` headers for one `chat`/`generate` call. A
+ * call-scoped concern kept off the request object on purpose (D1) — retrieval applies to both
+ * `chat` and `generate`, and folding it into either request's serializer would mean the body
+ * builder has to know to exclude a header-only field. */
+export function buildRetrievalHeaders(options?: RetrievalOptions): Record<string, string> {
+  if (!options) {
+    return {};
+  }
+  const headers: Record<string, string> = { "X-InferHub-Retrieve": options.collection };
+  if (options.k !== undefined) headers["X-InferHub-Retrieve-K"] = String(options.k);
+  if (options.model !== undefined) headers["X-InferHub-Retrieve-Model"] = options.model;
+  if (options.mode !== undefined) headers["X-InferHub-Retrieve-Mode"] = options.mode;
+  if (options.rerank !== undefined) headers["X-InferHub-Rerank"] = String(options.rerank);
   return headers;
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "inferhub-client",
-  "version": "0.1.0",
-  "description": "Client for InferHub, a self-hosted, Ollama-compatible inference mesh — chat, generate, embeddings, model listing, status/health (core surface, v0.1.0).",
+  "version": "0.2.0",
+  "description": "Client for InferHub, a self-hosted, Ollama-compatible inference mesh — chat, generate, embeddings, model listing, status/health, vector data-plane, retrieval, ingestion and search (core + retrieval, v0.2.0).",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/Dev-Art-Solutions/InferHub.Clients/tree/main/js",

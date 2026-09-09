@@ -43,10 +43,9 @@ function findCasesFile(): string {
 
 const cases: ConformanceCase[] = JSON.parse(readFileSync(findCasesFile(), "utf-8")).cases;
 
-// v0.1.0's surface is chat + chat-stream only (no probe(), no OpenAI dialect, no retrieval —
-// phase-19 brief's non-goals). X-InferHub-Sources is still parsed (D3 non-goal note) since it
-// rides on plain chat/chat-stream responses.
-const SUPPORTED_KINDS = new Set(["chat", "chat-stream"]);
+// v0.2.0 adds retrieval: the vector data-plane, RAG headers, ingestion and search (phase-20
+// brief) — no probe(), no OpenAI dialect still (js/v1.0.0's).
+const SUPPORTED_KINDS = new Set(["chat", "chat-stream", "ingest-text", "search", "chunks"]);
 
 function clientFor(testCase: ConformanceCase): InferHubClient {
   const { response } = testCase;
@@ -68,8 +67,8 @@ describe("conformance corpus", () => {
   for (const testCase of cases) {
     const { kind } = testCase;
     const skipReason = !SUPPORTED_KINDS.has(kind)
-      ? `'${kind}' is outside inferhub-client v0.1.0's surface (core: chat/generate/embed/status ` +
-        `only — retrieval, the OpenAI dialect, ingestion/search/chunks land in js/v0.2.0 and js/v1.0.0)`
+      ? `'${kind}' is outside inferhub-client v0.2.0's surface (probe() and the OpenAI dialect ` +
+        `land in js/v1.0.0)`
       : undefined;
     const name = skipReason ? `${testCase.id} (skip: ${skipReason})` : testCase.id;
 
@@ -109,18 +108,40 @@ describe("conformance corpus", () => {
         return;
       }
 
+      if (assertKind === "ingest-partial-returned") {
+        const result = await client.ingestText("handbook", { id: "z", text: "x" });
+        expect(result.documentId).toBe(testCase.assert.documentId);
+        expect(result.chunksEmbedded).toBe(testCase.assert.chunksEmbedded);
+        return;
+      }
+
+      if (assertKind === "hits-in-wire-order") {
+        const result = await client.search("handbook", "q");
+        expect(result.hits[0]?.documentId).toBe(testCase.assert.firstDocumentId);
+        expect(result.hits[1]?.documentId).toBe(testCase.assert.secondDocumentId);
+        return;
+      }
+
+      if (assertKind === "chunk-index-string") {
+        const result = await client.getChunks("handbook", "onboarding");
+        expect(result.chunks[0]?.index).toBe(testCase.assert.expected);
+        expect(typeof result.chunks[0]?.index).toBe("string");
+        return;
+      }
+
       throw new Error(`assert.kind '${assertKind}' has no runner for kind '${kind}' yet`);
     });
   }
 });
 
 describe("conformance corpus — coverage", () => {
-  it("skips every case outside v0.1.0's surface by name, not silently", () => {
+  it("skips every case outside v0.2.0's surface by name, not silently", () => {
     const skipped = cases.filter((c) => !SUPPORTED_KINDS.has(c.kind));
     const covered = cases.filter((c) => SUPPORTED_KINDS.has(c.kind));
-    // 13 cases total (phase 15): 4 in v0.1.0's surface (chat + chat-stream), 9 outside it.
+    // 13 cases total (phase 15): 7 in v0.2.0's surface (chat/chat-stream + ingest-text/search/
+    // chunks), 6 outside it (probe x2, the OpenAI dialect x4).
     expect(covered.length + skipped.length).toBe(cases.length);
-    expect(covered.length).toBe(4);
-    expect(skipped.length).toBe(9);
+    expect(covered.length).toBe(7);
+    expect(skipped.length).toBe(6);
   });
 });

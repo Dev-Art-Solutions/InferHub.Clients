@@ -5,7 +5,7 @@
 
 A small, typed TypeScript client for [InferHub](https://github.com/Dev-Art-Solutions/InferHub) — a
 self-hosted, Ollama-compatible inference mesh. The **core** surface (chat, generate, streaming,
-embeddings, model listing, status, health) ships in `0.1.0`. `v0.2.0` adds **retrieval**: the
+embeddings, model listing, status, health) shipped in `0.1.0`. **`v0.2.0` adds retrieval**: the
 vector data-plane, the `X-InferHub-Retrieve*` RAG headers, ingestion and search. `v1.0.0` adds
 audio, images, the admin plane and the node.
 
@@ -38,23 +38,79 @@ One class, no sync/async split: everything async is a `Promise`, and a stream is
 `AsyncIterable` — TypeScript's native idiom, not a second façade to keep in sync (unlike the
 Python client, which needs two classes because Python has two incompatible calling conventions).
 
-## API surface (v0.1.0)
+## API surface (v0.2.0)
 
 | Method | Endpoint |
 |---|---|
 | `listModels()` | `GET /api/tags` |
-| `chat(request)` | `POST /api/chat` with `stream:false` → `Promise<ChatResponse>` |
-| `chatStream(request)` | `POST /api/chat` with `stream:true` → `AsyncIterable<ChatResponse>` |
-| `generate(request)` | `POST /api/generate` with `stream:false` → `Promise<GenerateResponse>` |
-| `generateStream(request)` | `POST /api/generate` with `stream:true` → `AsyncIterable<GenerateResponse>` |
+| `chat(request, retrieval?)` | `POST /api/chat` with `stream:false` → `Promise<ChatResponse>` |
+| `chatStream(request, retrieval?)` | `POST /api/chat` with `stream:true` → `AsyncIterable<ChatResponse>` |
+| `generate(request, retrieval?)` | `POST /api/generate` with `stream:false` → `Promise<GenerateResponse>` |
+| `generateStream(request, retrieval?)` | `POST /api/generate` with `stream:true` → `AsyncIterable<GenerateResponse>` |
 | `embed(request)` | `POST /api/embed` (batch — a string or a list of strings) |
 | `embedLegacy(request)` | `POST /api/embeddings` (legacy single prompt) |
 | `getStatus()` | `GET /api/status` |
 | `ping()` | `GET /health` — `boolean`, never throws for a non-success status |
+| `upsert(collection, upsert)` | `POST /api/vector/{collection}/upsert` |
+| `query(collection, query)` / `retrieve(collection, query)` | `POST /api/vector/{collection}/query` \| `/retrieve` |
+| `getRecord(collection, id)` | `GET /api/vector/{collection}/{id}` — `undefined` on 404 |
+| `deleteRecord(collection, id)` | `DELETE /api/vector/{collection}/{id}` — `boolean` |
+| `ingestText(collection, document)` / `ingestFile(collection, document)` | `POST /api/collections/{collection}/documents` |
+| `listDocuments(collection)` | `GET /api/collections/{collection}/documents` |
+| `getDocument(collection, id)` / `deleteDocument(collection, id)` | `.../{id}` — `undefined` on 404 |
+| `getChunks(collection, id)` | `GET .../{id}/chunks` |
+| `search(collection, query)` | `POST /api/collections/{collection}/search` — throws on a missing collection |
 
-Retrieval, ingestion, search, audio, images, admin and the node are **not in this version** — see
-`v0.2.0`/`v1.0.0` in the [root README](../README.md)'s parity table. `probe()` and the OpenAI
-dialect (`/v1/*`) are also later phases; there is no method here that could only throw.
+Audio, images, admin and the node are **not in this version** — see `v1.0.0` in the
+[root README](../README.md)'s parity table. `probe()` and the OpenAI dialect (`/v1/*`) are also
+later phases; there is no method here that could only throw.
+
+## Retrieval
+
+`RetrievalOptions` is a second, optional argument to `chat`/`chatStream`/`generate`/
+`generateStream` — never a body field, since it applies to two different request shapes and is a
+per-call concern, not part of either one:
+
+```ts
+const answer = await client.chat(
+  { model: "llama3", messages: [{ role: "user", content: "What is InferHub?" }] },
+  { collection: "docs", k: 5, rerank: true },
+);
+console.log(answer.message?.content, answer.sourceIds);
+```
+
+## Vector data-plane
+
+```ts
+await client.upsert("docs", { id: "a", text: "Payroll runs on the fifth working day." });
+const matches = await client.query("docs", { text: "when is payroll", topK: 3 });
+const record = await client.getRecord("docs", "a"); // undefined on 404
+await client.deleteRecord("docs", "a"); // boolean — true iff a record was actually deleted
+```
+
+## Ingestion and search
+
+```ts
+const result = await client.ingestText("docs", { id: "handbook", text: "..." });
+// result.status is "ingested" | "unchanged" | "partial" — a partial ingest is returned, never
+// thrown (root rule 11): the hub answers it as a 500-with-a-body because the document is
+// half-embedded, but the document id and the chunks that landed are real.
+
+await client.ingestFile("docs", {
+  id: "handbook-pdf",
+  filename: "handbook.pdf",
+  body: new Blob([bytes], { type: "application/pdf" }),
+});
+
+const found = await client.search("docs", "when is payroll");
+for (const hit of found.hits) {
+  console.log(hit.documentId, hit.score, hit.text); // wire order, never re-sorted by score
+}
+```
+
+`search` on a collection that does not exist **throws** rather than returning empty hits (root
+rule 12) — reporting "no hits" for a misspelled collection name is how a retrieval system reports
+an empty corpus as a working one.
 
 ## Streaming
 
@@ -120,8 +176,8 @@ Every `ChatResponse`/`GenerateResponse` carries `servedBy` (which node or `provi
 answered) and `sourceIds` (retrieval source document ids), read from response headers — surfaced,
 never interpreted. This client does not route, retry elsewhere, or prefer on `servedBy`: deciding
 to re-send a prompt to a second address is a second disclosure of the same prompt.
-`X-InferHub-Sources` is parsed even though `v0.1.0` has no way yet to opt into retrieval, and both
-shapes a real hub has sent — a JSON array and a comma-separated string — are handled.
+Both shapes a real hub has sent for `X-InferHub-Sources` — a JSON array and a comma-separated
+string — are handled.
 
 ## Node, browser, Deno, Bun
 
@@ -143,9 +199,9 @@ npm test                # vitest run
 ```
 
 `test/conformance.test.ts` drives the shared corpus at `../conformance/cases.json` — the same file
-the C#, Python and (later) Go runners read. Cases whose `kind` is outside `v0.1.0`'s surface
-(`probe`, the OpenAI dialect, retrieval/ingestion/search/chunks) are skipped by name, not filtered
-out of the file — 4 cases covered, 9 skipped, all 13 accounted for.
+the C#, Python and (later) Go runners read. Cases whose `kind` is outside `v0.2.0`'s surface
+(`probe`, the OpenAI dialect) are skipped by name, not filtered out of the file — 7 cases covered,
+6 skipped, all 13 accounted for.
 
 ## License
 

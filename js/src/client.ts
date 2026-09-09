@@ -5,24 +5,46 @@
  * status/health. Retrieval and modalities/admin/node are later phases (`js/v0.2.0`, `js/v1.0.0`).
  */
 
-import { buildHeaders, DEFAULT_BASE_URL, parseNdjsonLine, raiseForStatus, readServedBy, readSourceIds } from "./_base.js";
+import {
+  buildHeaders,
+  buildRetrievalHeaders,
+  DEFAULT_BASE_URL,
+  parseNdjsonLine,
+  raiseForStatus,
+  readServedBy,
+  readSourceIds,
+} from "./_base.js";
+import * as corpus from "./_corpus.js";
 import { readNdjsonLines } from "./_stream.js";
 import { InferHubError } from "./errors.js";
 import type {
   ChatMessage,
   ChatRequest,
   ChatResponse,
+  DocumentChunksResponse,
+  DocumentDeletion,
+  DocumentSummary,
   EmbeddingsRequest,
   EmbeddingsResponse,
   EmbedRequest,
   EmbedResponse,
+  FileDocument,
   GenerateRequest,
   GenerateResponse,
+  IngestResult,
   InferHubClientOptions,
   JsonDict,
   ModelInfo,
+  RetrievalOptions,
+  SearchRequest,
+  SearchResponse,
   StatusResponse,
   TagsResponse,
+  TextDocument,
+  VectorMatch,
+  VectorQuery,
+  VectorRecord,
+  VectorUpsert,
 } from "./types.js";
 
 // -- Wire (de)serialization ---------------------------------------------------------------------
@@ -184,6 +206,38 @@ function statusResponseFromJson(data: JsonDict): StatusResponse {
   };
 }
 
+function vectorUpsertToJson(upsert: VectorUpsert): JsonDict {
+  const body: JsonDict = { id: upsert.id };
+  if (upsert.vector !== undefined) body.vector = upsert.vector;
+  if (upsert.text !== undefined) body.text = upsert.text;
+  if (upsert.payload !== undefined) body.payload = upsert.payload;
+  return body;
+}
+
+function vectorQueryToJson(query: VectorQuery): JsonDict {
+  const body: JsonDict = { topK: query.topK ?? 10 };
+  if (query.vector !== undefined) body.vector = query.vector;
+  if (query.text !== undefined) body.text = query.text;
+  if (query.filter !== undefined) body.filter = query.filter;
+  return body;
+}
+
+function vectorMatchFromJson(data: JsonDict): VectorMatch {
+  return {
+    id: (data.id as string) ?? "",
+    score: (data.score as number) ?? 0,
+    payload: data.payload as JsonDict | undefined,
+  };
+}
+
+function vectorRecordFromJson(data: JsonDict): VectorRecord {
+  return {
+    id: (data.id as string) ?? "",
+    vector: data.vector as number[] | undefined,
+    payload: data.payload as JsonDict | undefined,
+  };
+}
+
 // -- The client -----------------------------------------------------------------------------------
 
 export class InferHubClient {
@@ -231,11 +285,15 @@ export class InferHubClient {
   }
 
   /** Blocking chat — `POST /api/chat` with `stream:false`. A 424 throws
-   * {@link InferHubRetrievalException}. */
-  async chat(request: ChatRequest): Promise<ChatResponse> {
+   * {@link InferHubRetrievalException}. `retrieval` builds the `X-InferHub-Retrieve*` headers for
+   * this call only (D1) — it is never part of the request body. */
+  async chat(request: ChatRequest, retrieval?: RetrievalOptions): Promise<ChatResponse> {
     const response = await this.request("api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...buildRetrievalHeaders(retrieval),
+      },
       body: JSON.stringify(chatRequestToJson(request, false)),
     });
     await raiseForStatus(response);
@@ -248,10 +306,16 @@ export class InferHubClient {
   /** Streaming chat — `POST /api/chat` with `stream:true`. Yields one {@link ChatResponse} per
    * NDJSON line; a terminal error chunk throws {@link InferHubError} instead of the iterator
    * hanging or ending quietly. */
-  async *chatStream(request: ChatRequest): AsyncIterable<ChatResponse> {
+  async *chatStream(
+    request: ChatRequest,
+    retrieval?: RetrievalOptions,
+  ): AsyncIterable<ChatResponse> {
     const response = await this.request("api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...buildRetrievalHeaders(retrieval),
+      },
       body: JSON.stringify(chatRequestToJson(request, true)),
     });
     await raiseForStatus(response);
@@ -272,10 +336,16 @@ export class InferHubClient {
   }
 
   /** Blocking generate — `POST /api/generate` with `stream:false`. */
-  async generate(request: GenerateRequest): Promise<GenerateResponse> {
+  async generate(
+    request: GenerateRequest,
+    retrieval?: RetrievalOptions,
+  ): Promise<GenerateResponse> {
     const response = await this.request("api/generate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...buildRetrievalHeaders(retrieval),
+      },
       body: JSON.stringify(generateRequestToJson(request, false)),
     });
     await raiseForStatus(response);
@@ -286,10 +356,16 @@ export class InferHubClient {
   }
 
   /** Streaming generate — `POST /api/generate` with `stream:true`. */
-  async *generateStream(request: GenerateRequest): AsyncIterable<GenerateResponse> {
+  async *generateStream(
+    request: GenerateRequest,
+    retrieval?: RetrievalOptions,
+  ): AsyncIterable<GenerateResponse> {
     const response = await this.request("api/generate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...buildRetrievalHeaders(retrieval),
+      },
       body: JSON.stringify(generateRequestToJson(request, true)),
     });
     await raiseForStatus(response);
@@ -354,5 +430,92 @@ export class InferHubClient {
   async ping(): Promise<boolean> {
     const response = await this.request("health", { method: "GET" });
     return response.ok;
+  }
+
+  // -- Vector data-plane (js/v0.2.0) -----------------------------------------------------------
+
+  /** `POST /api/vector/{collection}/upsert`. */
+  async upsert(collection: string, upsert: VectorUpsert): Promise<VectorRecord> {
+    const response = await this.request(`api/vector/${collection}/upsert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(vectorUpsertToJson(upsert)),
+    });
+    await raiseForStatus(response);
+    return vectorRecordFromJson((await response.json()) as JsonDict);
+  }
+
+  /** `POST /api/vector/{collection}/query`. */
+  async query(collection: string, query: VectorQuery): Promise<VectorMatch[]> {
+    const response = await this.request(`api/vector/${collection}/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(vectorQueryToJson(query)),
+    });
+    await raiseForStatus(response);
+    const data = (await response.json()) as JsonDict;
+    return ((data.matches as JsonDict[] | undefined) ?? []).map(vectorMatchFromJson);
+  }
+
+  /** `POST /api/vector/{collection}/retrieve` — same shape as {@link query}, the RAG-oriented
+   * route name the hub also answers on. */
+  async retrieve(collection: string, query: VectorQuery): Promise<VectorMatch[]> {
+    const response = await this.request(`api/vector/${collection}/retrieve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(vectorQueryToJson(query)),
+    });
+    await raiseForStatus(response);
+    const data = (await response.json()) as JsonDict;
+    return ((data.matches as JsonDict[] | undefined) ?? []).map(vectorMatchFromJson);
+  }
+
+  /** `GET /api/vector/{collection}/{id}` — `undefined` on 404, never thrown (root rule 12). */
+  async getRecord(collection: string, id: string): Promise<VectorRecord | undefined> {
+    const response = await this.request(`api/vector/${collection}/${id}`, { method: "GET" });
+    if (response.status === 404) return undefined;
+    await raiseForStatus(response);
+    return vectorRecordFromJson((await response.json()) as JsonDict);
+  }
+
+  /** `DELETE /api/vector/{collection}/{id}` — `true` iff a record was actually deleted. */
+  async deleteRecord(collection: string, id: string): Promise<boolean> {
+    const response = await this.request(`api/vector/${collection}/${id}`, { method: "DELETE" });
+    if (response.status === 404) return false;
+    await raiseForStatus(response);
+    return response.ok;
+  }
+
+  // -- Ingestion and search (js/v0.2.0) --------------------------------------------------------
+  // Thin wrappers over ./_corpus.ts (D3) — that module owns the wire shapes, this class only
+  // supplies the same `request()` chat/generate/vectors already share.
+
+  ingestText(collection: string, document: TextDocument): Promise<IngestResult> {
+    return corpus.ingestText(this.request.bind(this), collection, document);
+  }
+
+  ingestFile(collection: string, document: FileDocument): Promise<IngestResult> {
+    return corpus.ingestFile(this.request.bind(this), collection, document);
+  }
+
+  listDocuments(collection: string): Promise<DocumentSummary[]> {
+    return corpus.listDocuments(this.request.bind(this), collection);
+  }
+
+  getDocument(collection: string, documentId: string): Promise<DocumentSummary | undefined> {
+    return corpus.getDocument(this.request.bind(this), collection, documentId);
+  }
+
+  getChunks(collection: string, documentId: string): Promise<DocumentChunksResponse> {
+    return corpus.getChunks(this.request.bind(this), collection, documentId);
+  }
+
+  deleteDocument(collection: string, documentId: string): Promise<DocumentDeletion | undefined> {
+    return corpus.deleteDocument(this.request.bind(this), collection, documentId);
+  }
+
+  /** `search(collection, "a question")` or `search(collection, { query: "...", topK: 5 })`. */
+  search(collection: string, query: string | SearchRequest): Promise<SearchResponse> {
+    return corpus.search(this.request.bind(this), collection, query);
   }
 }

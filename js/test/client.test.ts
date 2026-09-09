@@ -469,3 +469,203 @@ describe("InferHubClient — embeddings, status, ping", () => {
     expect(result.models).toEqual([{ name: "llama3", digest: "abc", size: 123 }]);
   });
 });
+
+describe("InferHubClient — retrieval (js/v0.2.0)", () => {
+  it("chat() builds the X-InferHub-Retrieve* headers from RetrievalOptions, never the body", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ model: "llama3", message: { role: "assistant", content: "hi" }, done: true }),
+    );
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await client.chat(
+      { model: "llama3", messages: [{ role: "user", content: "hi" }] },
+      { collection: "docs", k: 5, model: "reranker", mode: "hybrid", rerank: true },
+    );
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-InferHub-Retrieve"]).toBe("docs");
+    expect(headers["X-InferHub-Retrieve-K"]).toBe("5");
+    expect(headers["X-InferHub-Retrieve-Model"]).toBe("reranker");
+    expect(headers["X-InferHub-Retrieve-Mode"]).toBe("hybrid");
+    expect(headers["X-InferHub-Rerank"]).toBe("true");
+    const body = JSON.parse(init.body as string);
+    expect(body.collection).toBeUndefined();
+    expect(body.retrieval).toBeUndefined();
+  });
+
+  it("chat() sends no retrieval headers when retrieval is omitted", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ model: "llama3", message: { role: "assistant", content: "hi" }, done: true }),
+    );
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await client.chat({ model: "llama3", messages: [] });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-InferHub-Retrieve"]).toBeUndefined();
+  });
+
+  it("upsert() posts to /api/vector/{collection}/upsert and parses VectorRecord", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: "a", vector: [0.1, 0.2] }));
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const result = await client.upsert("docs", { id: "a", text: "hello" });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://localhost:5080/api/vector/docs/upsert");
+    expect(JSON.parse(init.body as string)).toEqual({ id: "a", text: "hello" });
+    expect(result).toEqual({ id: "a", vector: [0.1, 0.2] });
+  });
+
+  it("query()/retrieve() post topK and parse the matches array", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ matches: [{ id: "a", score: 0.9 }, { id: "b", score: 0.1 }] }),
+    );
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const result = await client.query("docs", { text: "hello", topK: 2 });
+    expect(result).toEqual([
+      { id: "a", score: 0.9, payload: undefined },
+      { id: "b", score: 0.1, payload: undefined },
+    ]);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://localhost:5080/api/vector/docs/query");
+    expect(JSON.parse(init.body as string)).toEqual({ text: "hello", topK: 2 });
+  });
+
+  it("getRecord()/deleteRecord() return undefined/false on 404, never throwing", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await expect(client.getRecord("docs", "missing")).resolves.toBeUndefined();
+    await expect(client.deleteRecord("docs", "missing")).resolves.toBe(false);
+  });
+
+  it("ingestText() posts JSON and returns an IngestResult on success", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        documentId: "z",
+        collection: "handbook",
+        status: "ingested",
+        chunks: 3,
+        chunksEmbedded: 3,
+        bytes: 100,
+        somethingNew: true,
+      }),
+    );
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const result = await client.ingestText("handbook", { id: "z", text: "x" });
+    expect(result.status).toBe("ingested");
+    expect(result.chunksEmbedded).toBe(3);
+    expect(result.extra).toEqual({ somethingNew: true });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+  });
+
+  it("ingestFile() sends multipart with no explicit Content-Type and the file field last", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ documentId: "z", collection: "handbook", status: "ingested" }),
+    );
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const blob = new Blob(["file contents"], { type: "text/plain" });
+    await client.ingestFile("handbook", { id: "z", filename: "doc.txt", body: blob });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+    const form = init.body as FormData;
+    const keys = Array.from(form as unknown as Iterable<[string, unknown]>).map(([k]) => k);
+    expect(keys).toEqual(["id", "file"]);
+  });
+
+  it("a partial ingest (500 with an IngestResult body) is returned, never thrown", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(
+        { documentId: "z", collection: "handbook", status: "partial", chunksEmbedded: 0 },
+        { status: 500 },
+      ),
+    );
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const result = await client.ingestText("handbook", { id: "z", text: "x" });
+    expect(result.status).toBe("partial");
+    expect(result.chunksEmbedded).toBe(0);
+  });
+
+  it("a genuine error envelope on ingest still throws", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "boom" }, { status: 500 }));
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await expect(client.ingestText("handbook", { id: "z", text: "x" })).rejects.toBeInstanceOf(
+      InferHubError,
+    );
+  });
+
+  it("getDocument()/deleteDocument() return undefined on 404", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await expect(client.getDocument("handbook", "missing")).resolves.toBeUndefined();
+    await expect(client.deleteDocument("handbook", "missing")).resolves.toBeUndefined();
+  });
+
+  it("search() on a missing collection throws rather than returning empty hits", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "collection not found" }, { status: 404 }));
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await expect(client.search("no-such-collection", "q")).rejects.toBeInstanceOf(InferHubError);
+  });
+
+  it("search() accepts a bare string or a SearchRequest, both posting topK", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ collection: "docs", mode: "hybrid", hits: [] }));
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await client.search("docs", "a question");
+    let [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ query: "a question", topK: 10 });
+
+    await client.search("docs", { query: "a question", topK: 3, rerank: true });
+    [, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      query: "a question",
+      topK: 3,
+      rerank: true,
+    });
+  });
+
+  it("listDocuments() and getChunks() parse their arrays", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ documents: [{ documentId: "a", collection: "docs", status: "ingested" }] }),
+    );
+    const client = new InferHubClient({
+      baseUrl: "http://localhost:5080/",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const docs = await client.listDocuments("docs");
+    expect(docs).toHaveLength(1);
+    expect(docs[0]?.documentId).toBe("a");
+  });
+});
