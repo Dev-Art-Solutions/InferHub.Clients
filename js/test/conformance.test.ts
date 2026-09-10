@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   InferHubClient,
   InferHubError,
+  InferHubOpenAiException,
   InferHubRetrievalException,
 } from "../src/index.js";
 
@@ -43,9 +44,17 @@ function findCasesFile(): string {
 
 const cases: ConformanceCase[] = JSON.parse(readFileSync(findCasesFile(), "utf-8")).cases;
 
-// v0.2.0 adds retrieval: the vector data-plane, RAG headers, ingestion and search (phase-20
-// brief) — no probe(), no OpenAI dialect still (js/v1.0.0's).
-const SUPPORTED_KINDS = new Set(["chat", "chat-stream", "ingest-text", "search", "chunks"]);
+// js/v1.0.0 (phase 21) adds probe() and the images job seam's OpenAI envelope — the OpenAI chat
+// dialect (openai-chat/openai-chat-stream) stays dotnet-only per roadmap D3.
+const SUPPORTED_KINDS = new Set([
+  "chat",
+  "chat-stream",
+  "ingest-text",
+  "search",
+  "chunks",
+  "probe",
+  "openai-images-submit",
+]);
 
 function clientFor(testCase: ConformanceCase): InferHubClient {
   const { response } = testCase;
@@ -67,8 +76,8 @@ describe("conformance corpus", () => {
   for (const testCase of cases) {
     const { kind } = testCase;
     const skipReason = !SUPPORTED_KINDS.has(kind)
-      ? `'${kind}' is outside inferhub-client v0.2.0's surface (probe() and the OpenAI dialect ` +
-        `land in js/v1.0.0)`
+      ? `'${kind}' is outside inferhub-client v1.0.0's surface (the OpenAI chat dialect stays ` +
+        `dotnet-only per roadmap-polyglot-clients D3)`
       : undefined;
     const name = skipReason ? `${testCase.id} (skip: ${skipReason})` : testCase.id;
 
@@ -129,19 +138,44 @@ describe("conformance corpus", () => {
         return;
       }
 
+      if (assertKind === "solo-node") {
+        const result = await client.probe();
+        expect(result.kind).toBe("solo_node");
+        expect(result.nodeStatus?.name).toBe(testCase.assert.nodeName);
+        expect(result.nodeStatus?.retrieval?.rerank).toBe(testCase.assert.retrievalRerank);
+        return;
+      }
+
+      if (assertKind === "hub") {
+        const result = await client.probe();
+        expect(result.kind).toBe("hub");
+        expect(result.hubStatus?.nodes).toHaveLength(testCase.assert.nodeCount as number);
+        return;
+      }
+
+      if (assertKind === "throws-openai-exception" && kind === "openai-images-submit") {
+        const error = await client
+          .submitImageGeneration({ model: "llava:latest", prompt: "x" })
+          .catch((e) => e);
+        expect(error).toBeInstanceOf(InferHubOpenAiException);
+        expect(error.errorCode).toBe(testCase.assert.errorCode);
+        expect(error.retryAfter).toBe(testCase.assert.retryAfterSeconds);
+        return;
+      }
+
       throw new Error(`assert.kind '${assertKind}' has no runner for kind '${kind}' yet`);
     });
   }
 });
 
 describe("conformance corpus — coverage", () => {
-  it("skips every case outside v0.2.0's surface by name, not silently", () => {
+  it("skips every case outside v1.0.0's surface by name, not silently", () => {
     const skipped = cases.filter((c) => !SUPPORTED_KINDS.has(c.kind));
     const covered = cases.filter((c) => SUPPORTED_KINDS.has(c.kind));
-    // 13 cases total (phase 15): 7 in v0.2.0's surface (chat/chat-stream + ingest-text/search/
-    // chunks), 6 outside it (probe x2, the OpenAI dialect x4).
+    // 13 cases total: 10 in v1.0.0's surface (chat/chat-stream + ingest-text/search/chunks +
+    // probe x2 + openai-images-submit), 3 outside it (the OpenAI chat dialect, dotnet-only).
     expect(covered.length + skipped.length).toBe(cases.length);
-    expect(covered.length).toBe(7);
-    expect(skipped.length).toBe(6);
+    expect(covered.length).toBe(10);
+    expect(skipped.length).toBe(3);
   });
 });

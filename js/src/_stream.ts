@@ -44,3 +44,49 @@ export async function* readNdjsonLines(
     reader.releaseLock();
   }
 }
+
+/**
+ * Groups an SSE line stream into `{event, data}` pairs on each blank-line frame boundary — the
+ * mechanics phase-9's dotnet `SseFrameReader` and python's `parse_sse_lines` share between the
+ * speech, image-job and admin streams. Built on {@link readNdjsonLines} (D4): the byte decoding
+ * and line splitting is written once regardless of which line discipline — NDJSON or SSE — sits
+ * on top of it. `data:` lines accumulate (multi-line payloads join with `\n`); a comment line
+ * (`:`-prefixed) and any other field are ignored. A frame with no `data:` is skipped rather than
+ * yielded as `{data: {}}`, since every InferHub SSE frame this client reads carries a JSON payload.
+ */
+export async function* readSseFrames(
+  stream: ReadableStream<Uint8Array>,
+): AsyncGenerator<{ event?: string; data: Record<string, unknown> }> {
+  let event: string | undefined;
+  let dataLines: string[] = [];
+
+  const emit = (): { event?: string; data: Record<string, unknown> } | undefined => {
+    if (dataLines.length === 0) return undefined;
+    const raw = dataLines.join("\n");
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      data = { raw };
+    }
+    return { event, data };
+  };
+
+  for await (const line of readNdjsonLines(stream)) {
+    if (line === "") {
+      const frame = emit();
+      if (frame) yield frame;
+      event = undefined;
+      dataLines = [];
+      continue;
+    }
+    if (line.startsWith(":")) continue;
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trim());
+    }
+  }
+  const trailing = emit();
+  if (trailing) yield trailing;
+}

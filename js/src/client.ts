@@ -14,13 +14,22 @@ import {
   readServedBy,
   readSourceIds,
 } from "./_base.js";
+import * as admin from "./_admin.js";
 import * as corpus from "./_corpus.js";
+import * as media from "./_media.js";
 import { readNdjsonLines } from "./_stream.js";
 import { InferHubError } from "./errors.js";
 import type {
+  AdminEvent,
+  AdminNode,
   ChatMessage,
   ChatRequest,
   ChatResponse,
+  ClientRow,
+  CollectionDetail,
+  CollectionInfo,
+  CollectionsResponse,
+  DeleteProfileResult,
   DocumentChunksResponse,
   DocumentDeletion,
   DocumentSummary,
@@ -28,19 +37,40 @@ import type {
   EmbeddingsResponse,
   EmbedRequest,
   EmbedResponse,
+  EnsureModelResult,
   FileDocument,
+  FleetModelMatrix,
   GenerateRequest,
   GenerateResponse,
+  ImageContent,
+  ImageEditRequest,
+  ImageGenerationRequest,
+  ImageResponse,
+  ImageVariationRequest,
   IngestResult,
   InferHubClientOptions,
+  InferHubTargetProbe,
   JsonDict,
+  MediaJob,
+  MediaJobList,
+  ModelCommandAccepted,
   ModelInfo,
+  NodeProfile,
+  NodeProfileState,
+  PutProfileResult,
   RetrievalOptions,
   SearchRequest,
   SearchResponse,
+  SpeechAudio,
+  SpeechChunk,
+  SpeechRequest,
   StatusResponse,
   TagsResponse,
   TextDocument,
+  Transcription,
+  TranscriptionDocument,
+  TranscriptionRequest,
+  UsageResponse,
   VectorMatch,
   VectorQuery,
   VectorRecord,
@@ -517,5 +547,202 @@ export class InferHubClient {
   /** `search(collection, "a question")` or `search(collection, { query: "...", topK: 5 })`. */
   search(collection: string, query: string | SearchRequest): Promise<SearchResponse> {
     return corpus.search(this.request.bind(this), collection, query);
+  }
+
+  // -- Audio and images (js/v1.0.0) ------------------------------------------------------------
+  // Thin wrappers over ./_media.ts (D1) — that module owns the wire shapes and multipart/SSE
+  // mechanics, this class only supplies the same `request()` every other plane shares.
+
+  transcribe(request: TranscriptionRequest): Promise<Transcription> {
+    return media.transcribe(this.request.bind(this), request);
+  }
+
+  transcribeDocument(request: TranscriptionRequest): Promise<TranscriptionDocument> {
+    return media.transcribeDocument(this.request.bind(this), request);
+  }
+
+  createSpeech(request: SpeechRequest): Promise<SpeechAudio> {
+    return media.createSpeech(this.request.bind(this), request);
+  }
+
+  streamSpeech(request: SpeechRequest): AsyncGenerator<SpeechChunk> {
+    return media.streamSpeech(this.request.bind(this), request);
+  }
+
+  generateImage(request: ImageGenerationRequest): Promise<ImageResponse> {
+    return media.generateImage(this.request.bind(this), request);
+  }
+
+  editImage(request: ImageEditRequest): Promise<ImageResponse> {
+    return media.editImage(this.request.bind(this), request);
+  }
+
+  createImageVariation(request: ImageVariationRequest): Promise<ImageResponse> {
+    return media.createImageVariation(this.request.bind(this), request);
+  }
+
+  submitImageGeneration(request: ImageGenerationRequest): Promise<MediaJob> {
+    return media.submitImageGeneration(this.request.bind(this), request);
+  }
+
+  submitImageEdit(request: ImageEditRequest): Promise<MediaJob> {
+    return media.submitImageEdit(this.request.bind(this), request);
+  }
+
+  submitImageVariation(request: ImageVariationRequest): Promise<MediaJob> {
+    return media.submitImageVariation(this.request.bind(this), request);
+  }
+
+  listImageJobs(): Promise<MediaJobList> {
+    return media.listImageJobs(this.request.bind(this));
+  }
+
+  getImageJob(jobId: string): Promise<MediaJob | undefined> {
+    return media.getImageJob(this.request.bind(this), jobId);
+  }
+
+  watchImageJob(jobId: string): AsyncGenerator<MediaJob> {
+    return media.watchImageJob(this.request.bind(this), jobId);
+  }
+
+  openImageContent(jobId: string, index: number): Promise<ImageContent> {
+    return media.openImageContent(this.request.bind(this), jobId, index);
+  }
+
+  cancelImageJob(jobId: string): Promise<MediaJob> {
+    return media.cancelImageJob(this.request.bind(this), jobId);
+  }
+
+  // -- Admin and the node (js/v1.0.0) ----------------------------------------------------------
+  // Thin wrappers over ./_admin.ts (D1). Admin methods need an admin key, not a client key — a
+  // caller constructs this same class with an admin key to reach them.
+
+  listNodes(): Promise<AdminNode[]> {
+    return admin.listNodes(this.request.bind(this));
+  }
+
+  cordon(nodeId: string): Promise<void> {
+    return admin.cordon(this.request.bind(this), nodeId);
+  }
+
+  uncordon(nodeId: string): Promise<void> {
+    return admin.uncordon(this.request.bind(this), nodeId);
+  }
+
+  deregister(nodeId: string): Promise<void> {
+    return admin.deregister(this.request.bind(this), nodeId);
+  }
+
+  listAdminCollections(): Promise<CollectionsResponse> {
+    return admin.listAdminCollections(this.request.bind(this));
+  }
+
+  getAdminCollection(collection: string): Promise<CollectionDetail | undefined> {
+    return admin.getAdminCollection(this.request.bind(this), collection);
+  }
+
+  createAdminCollection(name: string, dimension: number, distance?: string): Promise<CollectionInfo> {
+    return admin.createAdminCollection(this.request.bind(this), name, dimension, distance);
+  }
+
+  dropAdminCollection(collection: string): Promise<void> {
+    return admin.dropAdminCollection(this.request.bind(this), collection);
+  }
+
+  rebuildAdminCollection(collection: string): Promise<void> {
+    return admin.rebuildAdminCollection(this.request.bind(this), collection);
+  }
+
+  streamAdminEvents(): AsyncGenerator<AdminEvent> {
+    return admin.streamAdminEvents(this.request.bind(this));
+  }
+
+  listProfiles(): Promise<NodeProfile[]> {
+    return admin.listProfiles(this.request.bind(this));
+  }
+
+  getProfile(name: string): Promise<NodeProfile | undefined> {
+    return admin.getProfile(this.request.bind(this), name);
+  }
+
+  putProfile(name: string, profile: NodeProfile): Promise<PutProfileResult> {
+    return admin.putProfile(this.request.bind(this), name, profile);
+  }
+
+  deleteProfile(name: string): Promise<DeleteProfileResult> {
+    return admin.deleteProfile(this.request.bind(this), name);
+  }
+
+  getNodeProfile(nodeId: string): Promise<NodeProfileState> {
+    return admin.getNodeProfile(this.request.bind(this), nodeId);
+  }
+
+  pullModel(nodeId: string, model: string): Promise<ModelCommandAccepted> {
+    return admin.pullModel(this.request.bind(this), nodeId, model);
+  }
+
+  deleteModel(nodeId: string, model: string): Promise<ModelCommandAccepted> {
+    return admin.deleteModel(this.request.bind(this), nodeId, model);
+  }
+
+  warmModel(nodeId: string, model: string): Promise<ModelCommandAccepted> {
+    return admin.warmModel(this.request.bind(this), nodeId, model);
+  }
+
+  pullToolModel(nodeId: string, tool: string, model: string): Promise<ModelCommandAccepted> {
+    return admin.pullToolModel(this.request.bind(this), nodeId, tool, model);
+  }
+
+  deleteToolModel(nodeId: string, tool: string, model: string): Promise<ModelCommandAccepted> {
+    return admin.deleteToolModel(this.request.bind(this), nodeId, tool, model);
+  }
+
+  listModelMatrix(): Promise<FleetModelMatrix> {
+    return admin.listModelMatrix(this.request.bind(this));
+  }
+
+  ensureModel(model: string, replicas?: number): Promise<EnsureModelResult> {
+    return admin.ensureModel(this.request.bind(this), model, replicas);
+  }
+
+  queryUsage(
+    from?: string | Date,
+    to?: string | Date,
+    clientId?: string,
+    model?: string,
+  ): Promise<UsageResponse> {
+    return admin.queryUsage(this.request.bind(this), from, to, clientId, model);
+  }
+
+  listClients(): Promise<ClientRow[]> {
+    return admin.listClients(this.request.bind(this));
+  }
+
+  /** `GET /api/status` — one round trip, discriminated on whether the body carries `mode` (a
+   * solo node) or not (the hub). */
+  probe(): Promise<InferHubTargetProbe> {
+    return admin.probe(this.request.bind(this));
+  }
+
+  /** `GET /api/version` — node-only. */
+  getNodeVersion(): Promise<string> {
+    return admin.getNodeVersion(this.request.bind(this));
+  }
+
+  /** `GET /api/collections` — node-only; not {@link listAdminCollections}. */
+  listNodeCollections(): Promise<CollectionInfo[]> {
+    return admin.listNodeCollections(this.request.bind(this));
+  }
+
+  getNodeCollection(name: string): Promise<CollectionInfo | undefined> {
+    return admin.getNodeCollection(this.request.bind(this), name);
+  }
+
+  createNodeCollection(name: string, dimension: number, distance?: string): Promise<CollectionInfo> {
+    return admin.createNodeCollection(this.request.bind(this), name, dimension, distance);
+  }
+
+  dropNodeCollection(name: string): Promise<void> {
+    return admin.dropNodeCollection(this.request.bind(this), name);
   }
 }

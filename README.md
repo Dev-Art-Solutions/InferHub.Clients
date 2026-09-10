@@ -7,7 +7,7 @@ Ollama-compatible inference mesh. One repository, one hub surface, a client per 
 |---|---|---|---|
 | **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.7.1` | shipping |
 | **Python** — [`python/`](python/) | [`inferhub-client`](https://pypi.org/project/inferhub-client/) on PyPI | `1.0.0` | shipping (core, retrieval, audio, images, admin, node) |
-| **TypeScript** — [`js/`](js/) | [`inferhub-client`](https://www.npmjs.com/package/inferhub-client) on npm | `0.2.0` | shipping (core, retrieval) |
+| **TypeScript** — [`js/`](js/) | [`inferhub-client`](https://www.npmjs.com/package/inferhub-client) on npm | `1.0.0` | shipping (core, retrieval, audio, images, admin, node) |
 | **Go** — [`go/`](go/) | `pkg.go.dev` | — | planned |
 
 Every client talks to the same HTTP surface, and **a node is a base address, not a different
@@ -25,25 +25,25 @@ Empty columns are the honest state, not an oversight — each one names the phas
 | Embeddings (batch + legacy) | ✓ | ✓ | ✓ | — |
 | Vector data plane (upsert/query/retrieve) | ✓ | ✓ | ✓ | — |
 | RAG retrieval, with source ids | ✓ | ✓ | ✓ | — |
-| Admin: fleet ops, collections, live SSE | ✓ | ✓ | — | — |
+| Admin: fleet ops, collections, live SSE | ✓ | ✓ | ✓ | — |
 | Transient retries, trim/AOT clean | ✓ | n/a | n/a | n/a |
 | OpenAI dialect (`/v1/*`) + provider steer | ✓ | — | — | — |
-| Audio — transcription and streamed speech | ✓ | ✓ | — | — |
-| Images — sync, async jobs, read-once content | ✓ | ✓ | — | — |
-| Video — the OpenAI dialect, read-once content | ✓ | — (taught refusal only, rule 10) | — | — |
+| Audio — transcription and streamed speech | ✓ | ✓ | ✓ | — |
+| Images — sync, async jobs, read-once content | ✓ | ✓ | ✓ | — |
+| Video — the OpenAI dialect, read-once content | ✓ | — (taught refusal only, rule 10) | — (taught refusal only, rule 10) | — |
 | Ingestion, documents, chunks, search & rerank | ✓ | ✓ | ✓ | — |
-| Admin: profiles, model lifecycle, usage | ✓ | ✓ | — | — |
-| A node as a first-class target | ✓ | ✓ | — | — |
+| Admin: profiles, model lifecycle, usage | ✓ | ✓ | ✓ | — |
+| A node as a first-class target | ✓ | ✓ | ✓ | — |
 | Core client | ✓ | ✓ | ✓ (19 done) | phase 22 |
 | Retrieval | ✓ | ✓ | ✓ (20 done) | phase 23 |
-| Modalities, admin, node, and 1.0 | ✓ (7–14 done) | ✓ (18 done) | phase 21 | phase 24 |
+| Modalities, admin, node, and 1.0 | ✓ (7–14 done) | ✓ (18 done) | ✓ (21 done) | phase 24 |
 
 ## Layout
 
 ```
 dotnet/       the C# client, its tests and its runnable samples
 python/       the Python client (core, retrieval, audio, images, admin, node — v1.0.0), tests and examples
-js/           the TypeScript client (core, retrieval — v0.2.0), tests and examples
+js/           the TypeScript client (core, retrieval, audio, images, admin, node — v1.0.0), tests and examples
 go/           planned
 spec/         the hub's client-facing surface, and the payloads recorded from a real hub
 conformance/  one language-agnostic case file every client is driven against (13 cases so far)
