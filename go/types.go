@@ -23,10 +23,10 @@ type JSONDict = map[string]any
 
 // ChatMessage is one message in a Chat/ChatStream request or response.
 type ChatMessage struct {
-	Role      string           `json:"role"`
-	Content   string           `json:"content"`
-	Images    []string         `json:"images,omitempty"`
-	ToolCalls []JSONDict       `json:"tool_calls,omitempty"`
+	Role      string     `json:"role"`
+	Content   string     `json:"content"`
+	Images    []string   `json:"images,omitempty"`
+	ToolCalls []JSONDict `json:"tool_calls,omitempty"`
 	// Extra holds fields this version does not know about — merged in on the way out (response),
 	// kept apart on the way in (request), same as ChatRequest.Extra.
 	Extra JSONDict `json:"-"`

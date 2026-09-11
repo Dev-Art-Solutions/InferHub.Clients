@@ -28,6 +28,7 @@ import (
 //   - a callback (ForEach(func(ChatResponse) error) error): fine for "process every chunk" but
 //     awkward for a caller who wants to break early after finding one thing, which `for
 //     stream.Next()` does not require the caller to special-case.
+//
 // The Scanner shape is exactly database/sql.Rows and bufio.Scanner's own shape — the most-used
 // iterator idiom in the stdlib itself, and every Go developer already knows the `for rows.Next()`
 // loop.
@@ -161,4 +162,3 @@ func newScanner(body io.Reader) *bufio.Scanner {
 	scanner.Buffer(buf, 8*1024*1024)
 	return scanner
 }
-

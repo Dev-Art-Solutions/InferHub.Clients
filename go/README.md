@@ -193,10 +193,12 @@ C#, Python and TypeScript runners read. Cases whose `kind` is outside `v0.1.0`'s
 the OpenAI dialect, retrieval/ingestion/search/chunks) are skipped by name via `t.Skip`, not
 filtered out of the file — 4 cases covered, 9 skipped, all 13 accounted for.
 
-**Not verified in this repository's environment:** the Go toolchain (`go`, `gofmt`) is not installed
-where this package was written, so none of the commands above have actually been run against this
-code — see `plans/phase-22-go-core.md`'s verification section (gitignored locally) and the phase's
-release notes for what that means for this release.
+Verified with Go 1.23.4 (portable install, no admin rights available in the authoring environment):
+`go build ./...` and `go vet ./...` clean, `gofmt -l .` clean (two files needed reformatting —
+applied), `go test ./...` green — 22 unit tests pass, conformance runner at 4 pass / 9 named-skip /
+13 accounted for. Not run: an example against a real hub (none reachable from this environment) and
+`go get` from the module proxy (needs a pushed public tag) — both remain open release-checklist
+items.
 
 ## License
 

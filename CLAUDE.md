@@ -50,8 +50,7 @@ go vet ./go/...
 gofmt -l go/                                             # must print nothing
 go test ./go/...                                         # 22 unit tests + 13 corpus cases (4 run,
                                                           # 9 named-skip outside v0.1.0's surface) +
-                                                          # 1 coverage test — NOT run in this repo's
-                                                          # environment; no Go toolchain here (phase 22)
+                                                          # 1 coverage test — all green (Go 1.23.4)
 go run ./go/examples/basicchat                           # needs a coordinator on :5080
 ```
 
