@@ -1,0 +1,60 @@
+name: go — release
+
+# Tags are <lang>/vX.Y.Z (root CLAUDE.md "Versions and tags"; js-release.yml's own comment applies
+# here, word for word, because it is the reason the whole repository uses this scheme: a Go module
+# in a subdirectory resolves ONLY from a tag prefixed with that subdirectory (go/v0.1.0, not
+# v0.1.0), so the scheme every other package merely tolerates is the one Go actually requires — Go
+# is the one language here where getting this wrong is silent for a week, not a failed release.
+#
+# No publish/token step: unlike npm and PyPI, the Go module proxy resolves a package straight from
+# the tagged GitHub repository — `go get github.com/Dev-Art-Solutions/InferHub.Clients/go@go/v0.1.0`
+# works the moment the tag is pushed and the repository is public, no registry account, no secret.
+# This workflow's job is build + vet + test, then a GitHub release; nothing more to ship.
+on:
+  push:
+    tags:
+      - 'go/v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#go/v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Vet
+        working-directory: go
+        run: go vet ./...
+
+      - name: gofmt (clean, no changes needed)
+        working-directory: go
+        run: |
+          test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+      - name: Build
+        working-directory: go
+        run: go build ./...
+
+      - name: Test
+        working-directory: go
+        run: go test ./...
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true

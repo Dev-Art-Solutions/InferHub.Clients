@@ -8,7 +8,7 @@ Ollama-compatible inference mesh. One repository, one hub surface, a client per 
 | **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.7.1` | shipping |
 | **Python** — [`python/`](python/) | [`inferhub-client`](https://pypi.org/project/inferhub-client/) on PyPI | `1.0.0` | shipping (core, retrieval, audio, images, admin, node) |
 | **TypeScript** — [`js/`](js/) | [`inferhub-client`](https://www.npmjs.com/package/inferhub-client) on npm | `1.0.0` | shipping (core, retrieval, audio, images, admin, node) |
-| **Go** — [`go/`](go/) | `pkg.go.dev` | — | planned |
+| **Go** — [`go/`](go/) | [`github.com/Dev-Art-Solutions/InferHub.Clients/go`](https://pkg.go.dev/github.com/Dev-Art-Solutions/InferHub.Clients/go) | `0.1.0` | shipping (core) |
 
 Every client talks to the same HTTP surface, and **a node is a base address, not a different
 client**: a solo InferHub node serves the same paths with the same bodies as a coordinator, so
@@ -20,9 +20,9 @@ Empty columns are the honest state, not an oversight — each one names the phas
 
 | Capability | C# | Python | TypeScript | Go |
 |---|---|---|---|---|
-| Chat & generate, blocking | ✓ | ✓ | ✓ | — |
-| Chat & generate, streaming | ✓ | ✓ | ✓ | — |
-| Embeddings (batch + legacy) | ✓ | ✓ | ✓ | — |
+| Chat & generate, blocking | ✓ | ✓ | ✓ | ✓ |
+| Chat & generate, streaming | ✓ | ✓ | ✓ | ✓ |
+| Embeddings (batch + legacy) | ✓ | ✓ | ✓ | ✓ |
 | Vector data plane (upsert/query/retrieve) | ✓ | ✓ | ✓ | — |
 | RAG retrieval, with source ids | ✓ | ✓ | ✓ | — |
 | Admin: fleet ops, collections, live SSE | ✓ | ✓ | ✓ | — |
@@ -34,7 +34,7 @@ Empty columns are the honest state, not an oversight — each one names the phas
 | Ingestion, documents, chunks, search & rerank | ✓ | ✓ | ✓ | — |
 | Admin: profiles, model lifecycle, usage | ✓ | ✓ | ✓ | — |
 | A node as a first-class target | ✓ | ✓ | ✓ | — |
-| Core client | ✓ | ✓ | ✓ (19 done) | phase 22 |
+| Core client | ✓ | ✓ | ✓ (19 done) | ✓ (22 done) |
 | Retrieval | ✓ | ✓ | ✓ (20 done) | phase 23 |
 | Modalities, admin, node, and 1.0 | ✓ (7–14 done) | ✓ (18 done) | ✓ (21 done) | phase 24 |
 
@@ -44,7 +44,7 @@ Empty columns are the honest state, not an oversight — each one names the phas
 dotnet/       the C# client, its tests and its runnable samples
 python/       the Python client (core, retrieval, audio, images, admin, node — v1.0.0), tests and examples
 js/           the TypeScript client (core, retrieval, audio, images, admin, node — v1.0.0), tests and examples
-go/           planned
+go/           the Go client (core — v0.1.0), stdlib-only, tests and examples
 spec/         the hub's client-facing surface, and the payloads recorded from a real hub
 conformance/  one language-agnostic case file every client is driven against (13 cases so far)
 ```

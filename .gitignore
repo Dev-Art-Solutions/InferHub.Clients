@@ -80,3 +80,10 @@ python/dist/
 python/build/
 python/.venv/
 .venv/
+
+# ---------------------------------------------------------------------------
+# Go — no go.sum entry: zero dependencies (root CLAUDE.md rule 2) means go.mod never grows a
+# require block and go.sum is never generated, so there is nothing to ignore or to commit.
+# ---------------------------------------------------------------------------
+*.test
+coverage.out

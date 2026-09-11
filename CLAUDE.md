@@ -16,7 +16,8 @@ changes the wire, and a question about *why* an endpoint behaves as it does is a
 dotnet/         the C# client — src/, tests/, samples/, its own solution and Directory.Build.props
 python/         core + retrieval — src/, tests/, examples/ (v0.2.0, shipping on PyPI)
 js/             core + retrieval — src/, test/, examples/ (v0.2.0, shipping on npm)
-go/             planned (phase 22)
+go/             core — src (stdlib net/http only), *_test.go, examples/ (v0.1.0, tagged; not yet
+                published — the Go module proxy resolves straight from the tagged GitHub repo)
 spec/           the hub's client-facing surface, and response bodies recorded from a real hub
 conformance/    one language-agnostic case file every client is driven against (13 cases, phase 15)
 plans/          build briefs. Gitignored except plans/CLAUDE.md, which is the format.
@@ -43,6 +44,15 @@ npm --prefix js run typecheck                          # tsc --noEmit
 npm --prefix js run build                               # tsup: dist/index.mjs + dist/index.cjs + .d.ts
 npm --prefix js test                                    # vitest run — 45 pass, 6 skipped (corpus cases outside v0.2.0)
 npx tsx js/examples/basic-chat.ts                       # needs a coordinator on :5080
+
+go build ./go/...
+go vet ./go/...
+gofmt -l go/                                             # must print nothing
+go test ./go/...                                         # 22 unit tests + 13 corpus cases (4 run,
+                                                          # 9 named-skip outside v0.1.0's surface) +
+                                                          # 1 coverage test — NOT run in this repo's
+                                                          # environment; no Go toolchain here (phase 22)
+go run ./go/examples/basicchat                           # needs a coordinator on :5080
 ```
 
 The env-gated integration suite runs only when `INFERHUB_TEST_BASEADDRESS` is set (and hits a real
