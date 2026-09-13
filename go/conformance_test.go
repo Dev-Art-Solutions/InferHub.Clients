@@ -39,15 +39,17 @@ type conformanceFile struct {
 	Cases []conformanceCase `json:"cases"`
 }
 
-// supportedKinds is go/v0.2.0's surface: chat + chat-stream (v0.1.0) plus ingest-text/search/
-// chunks (v0.2.0's corpus plane). No probe, no OpenAI dialect — those land in go/v1.0.0, same
-// split js 20 already proved.
+// supportedKinds is go/v1.0.0's surface: chat + chat-stream (v0.1.0), ingest-text/search/chunks
+// (v0.2.0), plus probe and openai-images-submit (v1.0.0). The OpenAI /v1/chat/completions dialect
+// (kinds openai-chat/openai-chat-stream) stays dotnet-only, same as python 18 and js 21.
 var supportedKinds = map[string]bool{
-	"chat":        true,
-	"chat-stream": true,
-	"ingest-text": true,
-	"search":      true,
-	"chunks":      true,
+	"chat":                 true,
+	"chat-stream":          true,
+	"ingest-text":          true,
+	"search":               true,
+	"chunks":               true,
+	"probe":                true,
+	"openai-images-submit": true,
 }
 
 // findCasesFile walks up from the test's working directory to find conformance/cases.json, the
@@ -115,8 +117,8 @@ func TestConformanceCorpus(t *testing.T) {
 		tc := tc
 		t.Run(tc.ID, func(t *testing.T) {
 			if !supportedKinds[tc.Kind] {
-				t.Skipf("%q is outside inferhub go client v0.2.0's surface (chat/generate/embed/status, "+
-					"vector CRUD, ingestion/search/chunks — probe() and the OpenAI dialect land in go/v1.0.0)", tc.Kind)
+				t.Skipf("%q is outside inferhub go client v1.0.0's surface — the OpenAI /v1/chat/completions "+
+					"dialect stays dotnet-only, same as python 18 and js 21", tc.Kind)
 			}
 
 			assertKind, _ := tc.Assert["kind"].(string)
@@ -204,6 +206,54 @@ func TestConformanceCorpus(t *testing.T) {
 						result.Hits[0].DocumentID, result.Hits[1].DocumentID, wantFirst, wantSecond)
 				}
 
+			case "solo-node":
+				probe, err := client.Probe(context.Background())
+				if err != nil {
+					t.Fatalf("Probe: %v", err)
+				}
+				if probe.Kind != TargetSoloNode || probe.NodeStatus == nil {
+					t.Fatalf("Probe = %+v, want a solo-node result", probe)
+				}
+				wantName, _ := tc.Assert["nodeName"].(string)
+				wantRerank, _ := tc.Assert["retrievalRerank"].(string)
+				if probe.NodeStatus.Name != wantName {
+					t.Errorf("NodeStatus.Name = %q, want %q", probe.NodeStatus.Name, wantName)
+				}
+				if probe.NodeStatus.Retrieval == nil || probe.NodeStatus.Retrieval.Rerank != wantRerank {
+					t.Errorf("NodeStatus.Retrieval.Rerank = %v, want %q (a string, not a bool)", probe.NodeStatus.Retrieval, wantRerank)
+				}
+
+			case "hub":
+				probe, err := client.Probe(context.Background())
+				if err != nil {
+					t.Fatalf("Probe: %v", err)
+				}
+				if probe.Kind != TargetHub || probe.HubStatus == nil {
+					t.Fatalf("Probe = %+v, want a hub result", probe)
+				}
+				wantNodeCount, _ := tc.Assert["nodeCount"].(float64)
+				if float64(len(probe.HubStatus.Nodes)) != wantNodeCount {
+					t.Errorf("len(HubStatus.Nodes) = %d, want %v", len(probe.HubStatus.Nodes), wantNodeCount)
+				}
+
+			case "throws-openai-exception":
+				_, err := client.SubmitImageGeneration(context.Background(), ImageGenerationRequest{Model: "llava:latest", Prompt: "x"})
+				var inferErr *Error
+				if !errors.As(err, &inferErr) {
+					t.Fatalf("SubmitImageGeneration error = %v, want *Error", err)
+				}
+				if !inferErr.IsOpenAI() {
+					t.Errorf("Kind = %v, want KindOpenAI", inferErr.Kind)
+				}
+				wantCode, _ := tc.Assert["errorCode"].(string)
+				if inferErr.Code != wantCode {
+					t.Errorf("Code = %q, want %q", inferErr.Code, wantCode)
+				}
+				wantRetry, _ := tc.Assert["retryAfterSeconds"].(float64)
+				if inferErr.RetryAfter == nil || *inferErr.RetryAfter != wantRetry {
+					t.Errorf("RetryAfter = %v, want %v", inferErr.RetryAfter, wantRetry)
+				}
+
 			case "chunk-index-string":
 				result, err := client.GetChunks(context.Background(), "handbook", "onboarding")
 				if err != nil {
@@ -224,10 +274,10 @@ func TestConformanceCorpus(t *testing.T) {
 	}
 }
 
-// TestConformanceCorpusCoverage asserts the split stays 7 covered / 6 skipped (13 cases total, from
-// phase 15) rather than silently drifting if the corpus grows and this runner's supportedKinds does
-// not — same split js's conformance.test.ts reached at js/v0.2.0 (phase 20) over the identical
-// corpus.
+// TestConformanceCorpusCoverage asserts the split stays 10 covered / 3 skipped (13 cases total,
+// from phase 15) rather than silently drifting if the corpus grows and this runner's
+// supportedKinds does not — same split js's conformance.test.ts reached at js/v1.0.0 (phase 21)
+// over the identical corpus.
 func TestConformanceCorpusCoverage(t *testing.T) {
 	cases := loadConformanceCases(t)
 	var covered, skipped int
@@ -241,10 +291,10 @@ func TestConformanceCorpusCoverage(t *testing.T) {
 	if covered+skipped != len(cases) {
 		t.Fatalf("covered(%d)+skipped(%d) != total(%d)", covered, skipped, len(cases))
 	}
-	if covered != 7 {
-		t.Errorf("covered = %d, want 7", covered)
+	if covered != 10 {
+		t.Errorf("covered = %d, want 10", covered)
 	}
-	if skipped != 6 {
-		t.Errorf("skipped = %d, want 6", skipped)
+	if skipped != 3 {
+		t.Errorf("skipped = %d, want 3", skipped)
 	}
 }

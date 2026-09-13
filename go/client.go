@@ -1,10 +1,11 @@
 // Package inferhub is a client for InferHub, a self-hosted, Ollama-compatible inference mesh.
 //
-// This covers the core surface (v0.1.0: chat, generate — blocking and streaming, embeddings,
-// model listing, status/health, auth, the error model) plus retrieval (v0.2.0: the vector
-// data-plane in vector.go, RAG headers via a trailing ...RetrievalOptions parameter on
-// Chat/ChatStream/Generate/GenerateStream, and ingestion/search in corpus.go). Modalities, admin
-// and the node are v1.0.0, a later phase — see plans/roadmap-polyglot-clients.md D3.
+// v1.0.0 covers the whole client-facing surface: the core (v0.1.0: chat, generate, embeddings,
+// model listing, status/health, auth, the error model), retrieval (v0.2.0: the vector data-plane
+// in vector.go, RAG headers via a trailing ...RetrievalOptions parameter on
+// Chat/ChatStream/Generate/GenerateStream, and ingestion/search in corpus.go), and modalities,
+// admin and the node (v1.0.0: audio and images in media.go, the admin plane and the node — a base
+// address, not a second client — in admin.go). This is a semver promise: additive-only from here.
 //
 // Stdlib net/http only (root CLAUDE.md rule 2's Go budget): zero entries in go.mod's require block.
 // Every method takes a context.Context as its first argument; errors are values, not panics — a

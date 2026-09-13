@@ -2,9 +2,10 @@
 
 A small, stdlib-only Go client for [InferHub](https://github.com/Dev-Art-Solutions/InferHub) — a
 self-hosted, Ollama-compatible inference mesh. The **core** surface (chat, generate, streaming,
-embeddings, model listing, status, health) shipped in `v0.1.0`. **`v0.2.0` adds retrieval**: the
-vector data-plane, the `X-InferHub-Retrieve*` RAG headers, ingestion and search. `v1.0.0` adds
-audio, images, the admin plane and the node.
+embeddings, model listing, status, health) shipped in `v0.1.0`; retrieval (the vector data-plane,
+the `X-InferHub-Retrieve*` RAG headers, ingestion and search) in `v0.2.0`. **`v1.0.0` closes the
+surface**: audio, images (sync and the async job seam), the admin plane, and the node — a semver
+promise, additive-only from here.
 
 **Zero dependencies.** `go.mod` has no `require` block — `net/http`, `encoding/json` and `bufio`
 are the whole implementation. Go is the fourth and last language this repository ships (after C#,
@@ -14,7 +15,7 @@ the same corpus every other client is driven against.
 ## Install
 
 ```
-go get github.com/Dev-Art-Solutions/InferHub.Clients/go@go/v0.2.0
+go get github.com/Dev-Art-Solutions/InferHub.Clients/go@v1.0.0
 ```
 
 A Go module in a subdirectory resolves **only** from a tag prefixed with that subdirectory — this
@@ -57,7 +58,7 @@ Every method takes a `context.Context` as its first argument, and errors come ba
 `error`, never a panic. A non-success HTTP status is always `*inferhub.Error`, with a `Kind` field
 saying which envelope produced it — see Errors, below.
 
-## API surface (v0.2.0)
+## API surface (v1.0.0)
 
 | Method | Endpoint |
 |---|---|
@@ -82,10 +83,25 @@ saying which envelope produced it — see Errors, below.
 | `GetChunks(ctx, collection, id)` | `GET /api/collections/{collection}/documents/{id}/chunks` |
 | `DeleteDocument(ctx, collection, id)` | `DELETE /api/collections/{collection}/documents/{id}` → `(deletion, ok, error)`, `ok=false` on 404 |
 | `Search(ctx, collection, request)` | `POST /api/collections/{collection}/search` — errors on a missing collection |
+| `Transcribe(ctx, request)` / `TranscribeDocument(ctx, request)` | `POST /v1/audio/transcriptions`, multipart |
+| `CreateSpeech(ctx, request)` / `StreamSpeech(ctx, request)` | `POST /v1/audio/speech` |
+| `GenerateImage`/`EditImage`/`CreateImageVariation(ctx, request)` | `POST /v1/images/{generations,edits,variations}` |
+| `SubmitImageGeneration`/`SubmitImageEdit`/`SubmitImageVariation(ctx, request)` | `POST /api/images/jobs` |
+| `ListImageJobs(ctx)` / `GetImageJob(ctx, id)` / `WatchImageJob(ctx, id)` | `GET /api/images/jobs[/{id}[/events]]` |
+| `OpenImageContent(ctx, id, index)` / `CancelImageJob(ctx, id)` | `GET`/`DELETE /api/images/jobs/{id}/...` |
+| `ListNodes`/`Cordon`/`Uncordon`/`Deregister(ctx, ...)` | `GET/POST /api/admin/nodes/**` |
+| `ListAdminCollections`/`GetAdminCollection`/`CreateAdminCollection`/`DropAdminCollection`/`RebuildAdminCollection` | `/api/admin/vector/collections/**` |
+| `StreamAdminEvents(ctx)` | `GET /api/admin/stream` (SSE) |
+| `ListProfiles`/`GetProfile`/`PutProfile`/`DeleteProfile`/`GetNodeProfile` | `/api/admin/profiles/**`, `/api/admin/nodes/{id}/profile` |
+| `PullModel`/`DeleteModel`/`WarmModel`/`PullToolModel`/`DeleteToolModel`/`ListModelMatrix`/`EnsureModel` | `/api/admin/nodes/{id}/models/**`, `/api/admin/models` |
+| `QueryUsage(ctx, query)` / `ListClients(ctx)` | `GET /api/admin/usage`, `GET /api/admin/clients` |
+| `Probe(ctx)` | `GET /api/status`, discriminated hub vs. solo node |
+| `GetNodeVersion(ctx)` | `GET /api/version` (node-only) |
+| `ListNodeCollections`/`GetNodeCollection`/`CreateNodeCollection`/`DropNodeCollection` | `/api/collections/**` (node-only, not the admin-gated route) |
 
-Audio, images, admin and the node are **not in this version** — see `v1.0.0` in the
-[root README](../README.md)'s parity table. There is no `Probe` method and no OpenAI dialect
-(`/v1/*`) client yet; nothing here is a method that could only return an error.
+No video module — the hub permanently `501`-refuses video listing/remix, so no throw-only method
+is published (root rule 10), same call the C#, Python and TypeScript clients already made. No
+`/v1/chat/completions` OpenAI-dialect client either — that stays dotnet-only.
 
 ## Streaming
 
@@ -187,6 +203,69 @@ found, err := client.Search(ctx, "docs", inferhub.SearchRequest{Query: "hello"})
 `chunk-index-is-a-string-not-an-int` exists because a client that gets this backwards fails to
 deserialize the very shape it is supposed to read.
 
+## Audio and images
+
+`Transcribe` always requests `verbose_json` regardless of what `TranscriptionRequest.ResponseFormat`
+says (dotnet D6 — these are the fields a caller does something with); use `TranscribeDocument` for
+`text`/`srt`/`vtt`, returned unaltered. `CreateSpeech` hands back the live `*http.Response` whether
+or not streaming was asked for — the caller consumes `Response.Body`; nothing buffers it (root rule
+7). `StreamSpeech` forces SSE framing and yields `SpeechChunk`s, ending at `speech.audio.done`; a
+`speech.audio.error` frame surfaces as `*inferhub.Error` with `Kind == KindOpenAI` instead of
+silently ending the stream.
+
+```go
+audio, err := client.CreateSpeech(ctx, inferhub.SpeechRequest{Model: "piper", Input: "hello"})
+defer audio.Response.Body.Close()
+io.Copy(out, audio.Response.Body)
+```
+
+Image generation/edit/variation is `GenerateImage`/`EditImage`/`CreateImageVariation` (sync,
+`/v1/images/*`) or `SubmitImageGeneration`/`SubmitImageEdit`/`SubmitImageVariation` (async,
+`/api/images/jobs` — poll with `GetImageJob` or stream with `WatchImageJob`, an SSE iterator that
+stops at a terminal state). `ImageOptions` is a struct of `*int`/`*float64`/`string` fields, turned
+into the `X-InferHub-Image-*` extension headers — never body fields. `OpenImageContent` is read
+once: the hub unlinks the bytes as they are read, so a retry is a `410`.
+
+## The admin plane and the node
+
+Fleet ops (`ListNodes`/`Cordon`/`Uncordon`/`Deregister`), admin-gated vector collections (distinct
+from the node-only ones below — different auth, different route, different shape), node profiles
+(`PutProfile`'s `NodeProfile.Name`/`.Revision` are ignored on write — the hub sets both from the
+route and its own counter), model lifecycle commands, and `QueryUsage` (counts only, never a prompt
+or a completion — hub rule 7) all need an admin key on `ClientOptions.APIKey`.
+
+`Probe` is the node story: one `GET /api/status`, discriminated on whether the body carries `mode`
+(present → a solo node; the hub's own document never has the field at all — the conformance
+corpus's `hub-status-has-no-mode-field` case exists to pin exactly that absence):
+
+```go
+probe, err := client.Probe(ctx)
+switch probe.Kind {
+case inferhub.TargetHub:
+	fmt.Println(*probe.HubStatus.CoordinatorVersion, len(probe.HubStatus.Nodes), "nodes")
+case inferhub.TargetSoloNode:
+	fmt.Println(probe.NodeStatus.Name, probe.NodeStatus.Retrieval.Rerank) // Rerank is a STRING
+}
+```
+
+`NodeStatusResponse.Retrieval.Rerank` is typed `string` (`"none"`/`"llm"`), never `bool` — the
+conformance corpus's founding case: dotnet `v1.7.0` typed it `bool?` and threw the first time it was
+driven against a real node with retrieval on, fixed same-day in `v1.7.1`. This client is typed
+correctly from the start because the case existed before it did.
+
+A solo node also answers `GET /api/version` (`GetNodeVersion` — a 404 against a hub means "wrong
+target," not "wrong version") and its own `/api/collections` vector-collection lifecycle
+(`ListNodeCollections`/`GetNodeCollection`/`CreateNodeCollection`/`DropNodeCollection`) — not the
+admin-gated `/api/admin/vector/collections` route: a node has no fleet to place a replica on, so the
+shape is smaller and the auth is different.
+
+## Video
+
+Not in this client. The hub `501`-refuses `GET /v1/videos` and `POST /v1/videos/{id}/remix`
+permanently, so a method that could only return an error is not published — `inferhub.
+VideoErrorCodeNotSupported` names the refusal instead. There is no durable id-to-prompt mapping on
+the hub, so a remix can never be served; send a new request with the prompt you want.
+
 ## Errors
 
 Every non-success response returns `*inferhub.Error`. Which envelope arrived decides its `Kind`,
@@ -255,7 +334,8 @@ and both shapes a real hub has sent — a JSON array and a comma-separated strin
 
 A solo InferHub node serves the same paths with the same bodies as a coordinator, so pointing this
 client at a node's own address is the whole of "run it against a node" (root `CLAUDE.md` rule 6).
-There is no separate node client type, and none is planned.
+There is no separate node client type, and none is planned. See "The admin plane and the node",
+above, for `Probe` and the node-only routes.
 
 ## Development
 
@@ -267,16 +347,15 @@ go test ./go/...
 ```
 
 `conformance_test.go` drives the shared corpus at `../conformance/cases.json` — the same file the
-C#, Python and TypeScript runners read. Cases whose `kind` is outside this version's surface
-(`probe`, the OpenAI dialect) are skipped by name via `t.Skip`, not filtered out of the file —
-7 cases covered, 6 skipped, all 13 accounted for (the same split js/v0.2.0 reached over the
-identical corpus).
+C#, Python and TypeScript runners read. Cases whose `kind` is outside this version's surface (the
+OpenAI `/v1/chat/completions` dialect only, which stays dotnet-only) are skipped by name via
+`t.Skip`, not filtered out of the file — **10 cases covered, 3 skipped**, all 13 accounted for (the
+same split js/v1.0.0 reached over the identical corpus).
 
 Verified with a portable Go 1.23.4 install: `go build ./...` and `go vet ./...` clean, `gofmt -l .`
-clean, `go test ./...` green — unit tests plus the conformance runner at 7 pass / 6 named-skip /
-13 accounted for, including the three cases this version newly covers
-(`partial-ingest-is-a-500-with-a-body-not-thrown`, `reranked-search-order-contradicts-its-own-
-scores`, `chunk-index-is-a-string-not-an-int`).
+clean, `go test ./...` green — unit tests plus the conformance runner at 10 pass / 3 named-skip /
+13 accounted for, including the three cases this version newly covers (`node-status-rerank-is-a-
+string`, `hub-status-has-no-mode-field`, `503-capability-unavailable-carries-retry-after`).
 
 ## License
 
