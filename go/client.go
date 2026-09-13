@@ -1,8 +1,10 @@
 // Package inferhub is a client for InferHub, a self-hosted, Ollama-compatible inference mesh.
 //
-// This is the core surface (v0.1.0): chat, generate (blocking and streaming), embeddings, model
-// listing, status/health, auth, the error model. Retrieval (v0.2.0) and modalities/admin/node
-// (v1.0.0) are later phases — see plans/roadmap-polyglot-clients.md D3.
+// This covers the core surface (v0.1.0: chat, generate — blocking and streaming, embeddings,
+// model listing, status/health, auth, the error model) plus retrieval (v0.2.0: the vector
+// data-plane in vector.go, RAG headers via a trailing ...RetrievalOptions parameter on
+// Chat/ChatStream/Generate/GenerateStream, and ingestion/search in corpus.go). Modalities, admin
+// and the node are v1.0.0, a later phase — see plans/roadmap-polyglot-clients.md D3.
 //
 // Stdlib net/http only (root CLAUDE.md rule 2's Go budget): zero entries in go.mod's require block.
 // Every method takes a context.Context as its first argument; errors are values, not panics — a
@@ -155,13 +157,17 @@ func parseOpenAIEnvelope(body string) (openAIEnvelope, bool) {
 }
 
 func retryAfterFrom(resp *http.Response) *float64 {
-	header := resp.Header.Get("Retry-After")
-	if header == "" {
+	return retryAfterFromHeader(resp.Header)
+}
+
+func retryAfterFromHeader(header http.Header) *float64 {
+	raw := header.Get("Retry-After")
+	if raw == "" {
 		return nil
 	}
 	// An HTTP-date form exists but the hub always writes delta-seconds, same carve-out
 	// python's _retry_after and js's retryAfter take.
-	value, err := strconv.ParseFloat(header, 64)
+	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		return nil
 	}
@@ -176,26 +182,36 @@ func raiseForStatus(resp *http.Response) error {
 	}
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	body := string(bodyBytes)
-	retry := retryAfterFrom(resp)
+	return raiseForStatusBody(resp.StatusCode, resp.Header, bodyBytes)
+}
 
-	if resp.StatusCode == http.StatusFailedDependency { // 424
+// raiseForStatusBody is raiseForStatus's body-already-read twin, for a caller (corpus.go's
+// ingestResultOrError) that must inspect the body itself before deciding whether this is an error
+// at all — a partial ingest's 500 is data, not a failure (root rule 11).
+func raiseForStatusBody(statusCode int, header http.Header, bodyBytes []byte) error {
+	if statusCode >= 200 && statusCode < 300 {
+		return nil
+	}
+	body := string(bodyBytes)
+	retry := retryAfterFromHeader(header)
+
+	if statusCode == http.StatusFailedDependency { // 424
 		message := extractErrorMessage(body)
 		if message == "" {
-			message = fmt.Sprintf("InferHub request failed with status %d.", resp.StatusCode)
+			message = fmt.Sprintf("InferHub request failed with status %d.", statusCode)
 		}
-		return newRetrievalError(resp.StatusCode, message, body, retry)
+		return newRetrievalError(statusCode, message, body, retry)
 	}
 
 	if envelope, ok := parseOpenAIEnvelope(body); ok {
-		return newOpenAIError(resp.StatusCode, envelope.Message, body, retry, envelope.Code, envelope.Param, envelope.Type)
+		return newOpenAIError(statusCode, envelope.Message, body, retry, envelope.Code, envelope.Param, envelope.Type)
 	}
 
 	message := extractErrorMessage(body)
 	if message == "" {
-		message = fmt.Sprintf("InferHub request failed with status %d.", resp.StatusCode)
+		message = fmt.Sprintf("InferHub request failed with status %d.", statusCode)
 	}
-	return newError(resp.StatusCode, message, body, retry)
+	return newError(statusCode, message, body, retry)
 }
 
 // -- NDJSON chunk parsing --------------------------------------------------------------------------
@@ -308,8 +324,10 @@ func (c *Client) ListModels(ctx context.Context) (TagsResponse, error) {
 }
 
 // Chat is blocking chat — POST /api/chat with stream:false. A 424 returns *Error with
-// Kind == KindRetrieval.
-func (c *Client) Chat(ctx context.Context, request ChatRequest) (ChatResponse, error) {
+// Kind == KindRetrieval. retrieval is an optional trailing parameter (D1 in
+// plans/phase-23-go-retrieval.md): omit it for a plain call, or pass one RetrievalOptions to build
+// the X-InferHub-Retrieve* headers for this call only.
+func (c *Client) Chat(ctx context.Context, request ChatRequest, retrieval ...RetrievalOptions) (ChatResponse, error) {
 	var out ChatResponse
 	body, err := request.marshalWithStream(false)
 	if err != nil {
@@ -319,6 +337,7 @@ func (c *Client) Chat(ctx context.Context, request ChatRequest) (ChatResponse, e
 	if err != nil {
 		return out, err
 	}
+	buildRetrievalHeaders(retrieval, req.Header)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return out, fmt.Errorf("inferhub: %w", err)
@@ -340,7 +359,7 @@ func (c *Client) Chat(ctx context.Context, request ChatRequest) (ChatResponse, e
 // caller must Close the returned *ChatStream once done (a deferred Close after a nil error is the
 // normal shape); when ChatStream itself returns a non-nil error, no stream is returned and there is
 // nothing to close.
-func (c *Client) ChatStream(ctx context.Context, request ChatRequest) (*ChatStream, error) {
+func (c *Client) ChatStream(ctx context.Context, request ChatRequest, retrieval ...RetrievalOptions) (*ChatStream, error) {
 	body, err := request.marshalWithStream(true)
 	if err != nil {
 		return nil, fmt.Errorf("inferhub: encoding chat request: %w", err)
@@ -349,6 +368,7 @@ func (c *Client) ChatStream(ctx context.Context, request ChatRequest) (*ChatStre
 	if err != nil {
 		return nil, err
 	}
+	buildRetrievalHeaders(retrieval, req.Header)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("inferhub: %w", err)
@@ -364,8 +384,9 @@ func (c *Client) ChatStream(ctx context.Context, request ChatRequest) (*ChatStre
 	}, nil
 }
 
-// Generate is blocking generate — POST /api/generate with stream:false.
-func (c *Client) Generate(ctx context.Context, request GenerateRequest) (GenerateResponse, error) {
+// Generate is blocking generate — POST /api/generate with stream:false. retrieval is an optional
+// trailing parameter, same as Chat (D1).
+func (c *Client) Generate(ctx context.Context, request GenerateRequest, retrieval ...RetrievalOptions) (GenerateResponse, error) {
 	var out GenerateResponse
 	body, err := request.marshalWithStream(false)
 	if err != nil {
@@ -375,6 +396,7 @@ func (c *Client) Generate(ctx context.Context, request GenerateRequest) (Generat
 	if err != nil {
 		return out, err
 	}
+	buildRetrievalHeaders(retrieval, req.Header)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return out, fmt.Errorf("inferhub: %w", err)
@@ -392,7 +414,7 @@ func (c *Client) Generate(ctx context.Context, request GenerateRequest) (Generat
 }
 
 // GenerateStream is streaming generate — POST /api/generate with stream:true.
-func (c *Client) GenerateStream(ctx context.Context, request GenerateRequest) (*GenerateStream, error) {
+func (c *Client) GenerateStream(ctx context.Context, request GenerateRequest, retrieval ...RetrievalOptions) (*GenerateStream, error) {
 	body, err := request.marshalWithStream(true)
 	if err != nil {
 		return nil, fmt.Errorf("inferhub: encoding generate request: %w", err)
@@ -401,6 +423,7 @@ func (c *Client) GenerateStream(ctx context.Context, request GenerateRequest) (*
 	if err != nil {
 		return nil, err
 	}
+	buildRetrievalHeaders(retrieval, req.Header)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("inferhub: %w", err)

@@ -2,7 +2,7 @@
 
 A small, stdlib-only Go client for [InferHub](https://github.com/Dev-Art-Solutions/InferHub) — a
 self-hosted, Ollama-compatible inference mesh. The **core** surface (chat, generate, streaming,
-embeddings, model listing, status, health) ships in `v0.1.0`. `v0.2.0` adds **retrieval**: the
+embeddings, model listing, status, health) shipped in `v0.1.0`. **`v0.2.0` adds retrieval**: the
 vector data-plane, the `X-InferHub-Retrieve*` RAG headers, ingestion and search. `v1.0.0` adds
 audio, images, the admin plane and the node.
 
@@ -14,7 +14,7 @@ the same corpus every other client is driven against.
 ## Install
 
 ```
-go get github.com/Dev-Art-Solutions/InferHub.Clients/go@go/v0.1.0
+go get github.com/Dev-Art-Solutions/InferHub.Clients/go@go/v0.2.0
 ```
 
 A Go module in a subdirectory resolves **only** from a tag prefixed with that subdirectory — this
@@ -57,23 +57,35 @@ Every method takes a `context.Context` as its first argument, and errors come ba
 `error`, never a panic. A non-success HTTP status is always `*inferhub.Error`, with a `Kind` field
 saying which envelope produced it — see Errors, below.
 
-## API surface (v0.1.0)
+## API surface (v0.2.0)
 
 | Method | Endpoint |
 |---|---|
 | `ListModels(ctx)` | `GET /api/tags` |
-| `Chat(ctx, request)` | `POST /api/chat` with `stream:false` → `(ChatResponse, error)` |
-| `ChatStream(ctx, request)` | `POST /api/chat` with `stream:true` → `(*ChatStream, error)` |
-| `Generate(ctx, request)` | `POST /api/generate` with `stream:false` → `(GenerateResponse, error)` |
-| `GenerateStream(ctx, request)` | `POST /api/generate` with `stream:true` → `(*GenerateStream, error)` |
+| `Chat(ctx, request, retrieval...)` | `POST /api/chat` with `stream:false` → `(ChatResponse, error)` |
+| `ChatStream(ctx, request, retrieval...)` | `POST /api/chat` with `stream:true` → `(*ChatStream, error)` |
+| `Generate(ctx, request, retrieval...)` | `POST /api/generate` with `stream:false` → `(GenerateResponse, error)` |
+| `GenerateStream(ctx, request, retrieval...)` | `POST /api/generate` with `stream:true` → `(*GenerateStream, error)` |
 | `Embed(ctx, request)` | `POST /api/embed` (batch — a string or a `[]string`) |
 | `EmbedLegacy(ctx, request)` | `POST /api/embeddings` (legacy single prompt) |
 | `Status(ctx)` | `GET /api/status` |
 | `Ping(ctx)` | `GET /health` — `bool`, never errors for a non-success status |
+| `Upsert(ctx, collection, upsert)` | `POST /api/vector/{collection}/upsert` |
+| `Query(ctx, collection, query)` | `POST /api/vector/{collection}/query` |
+| `Retrieve(ctx, collection, query)` | `POST /api/vector/{collection}/retrieve` (RAG-oriented alias of `Query`) |
+| `GetRecord(ctx, collection, id)` | `GET /api/vector/{collection}/{id}` → `(record, ok, error)`, `ok=false` on 404 |
+| `DeleteRecord(ctx, collection, id)` | `DELETE /api/vector/{collection}/{id}` → `(deleted bool, error)` |
+| `IngestText(ctx, collection, document)` | `POST /api/collections/{collection}/documents` (JSON body) |
+| `IngestFile(ctx, collection, document)` | `POST /api/collections/{collection}/documents` (multipart) |
+| `ListDocuments(ctx, collection)` | `GET /api/collections/{collection}/documents` |
+| `GetDocument(ctx, collection, id)` | `GET /api/collections/{collection}/documents/{id}` → `(doc, ok, error)`, `ok=false` on 404 |
+| `GetChunks(ctx, collection, id)` | `GET /api/collections/{collection}/documents/{id}/chunks` |
+| `DeleteDocument(ctx, collection, id)` | `DELETE /api/collections/{collection}/documents/{id}` → `(deletion, ok, error)`, `ok=false` on 404 |
+| `Search(ctx, collection, request)` | `POST /api/collections/{collection}/search` — errors on a missing collection |
 
-Retrieval, ingestion, search, audio, images, admin and the node are **not in this version** — see
-`v0.2.0`/`v1.0.0` in the [root README](../README.md)'s parity table. There is no `Probe` method and
-no OpenAI dialect (`/v1/*`) client yet; nothing here is a method that could only return an error.
+Audio, images, admin and the node are **not in this version** — see `v1.0.0` in the
+[root README](../README.md)'s parity table. There is no `Probe` method and no OpenAI dialect
+(`/v1/*`) client yet; nothing here is a method that could only return an error.
 
 ## Streaming
 
@@ -108,6 +120,72 @@ gets subtly wrong without a compiler; the Scanner shape needs no goroutine eithe
 nothing to leak if a caller stops iterating early. A terminal error chunk
 (`{"error": "...", "done": true}`) surfaces from `Next`/`Err` instead of the loop hanging or ending
 quietly with a partial answer nobody was told about.
+
+## Retrieval
+
+`RetrievalOptions` is a **trailing, variadic parameter** on `Chat`/`ChatStream`/`Generate`/
+`GenerateStream` — omit it for a plain call (a `v0.1.0` call site compiles and behaves identically),
+or pass one to build the `X-InferHub-Retrieve*`/`X-InferHub-Rerank` headers for that call only. It
+is never a field on `ChatRequest`/`GenerateRequest`: retrieval is a call-scoped concern that applies
+to two different request shapes, same argument python 17 and js 20 make for their languages.
+
+```go
+k := 5
+answer, err := client.Chat(ctx, inferhub.ChatRequest{
+	Model:    "llama3",
+	Messages: []inferhub.ChatMessage{{Role: "user", Content: "What is InferHub?"}},
+}, inferhub.RetrievalOptions{Collection: "docs", K: &k})
+if err != nil {
+	var inferErr *inferhub.Error
+	if errors.As(err, &inferErr) && inferErr.Kind == inferhub.KindRetrieval {
+		// retrieval was asked for and is unavailable (HTTP 424) — the chat call itself could have
+		// succeeded; only the retrieval step it depended on could not.
+	}
+}
+fmt.Println(answer.Message.Content, answer.SourceIDs)
+```
+
+### Vector data-plane
+
+`Upsert`/`Query`/`Retrieve`/`GetRecord`/`DeleteRecord` on `*Client` — `POST/GET/DELETE
+/api/vector/{collection}/**`. `GetRecord` and `DeleteRecord` return an `ok bool` alongside the
+value/error instead of erroring on a 404 (root rule 12: a 404 naming one record is an absence, not
+a failure):
+
+```go
+match, err := client.Upsert(ctx, "docs", inferhub.VectorUpsert{ID: "a1", Text: "hello"})
+matches, err := client.Query(ctx, "docs", inferhub.VectorQuery{Text: "hello", TopK: 5})
+record, ok, err := client.GetRecord(ctx, "docs", "a1") // ok == false, err == nil on a 404
+```
+
+### Ingestion and search
+
+`IngestText`/`IngestFile`/`ListDocuments`/`GetDocument`/`GetChunks`/`DeleteDocument`/`Search` —
+`/api/collections/{collection}/**`. `IngestFile` builds its own `multipart.Writer` (stdlib
+`mime/multipart`, no dependency); the file field is written last, matching the ordering the C#,
+Python and TypeScript clients already use for parsers that are order-sensitive.
+
+**A `"partial"` ingest is data, not a failure.** The hub answers a partial ingest with an HTTP 500
+that carries a complete `IngestResult` body — `IngestText`/`IngestFile` return that value instead of
+an error (root rule 11); only a body that does *not* look like an `IngestResult` (no `documentId` +
+`status`) still falls back to the usual error mapping.
+
+```go
+result, err := client.IngestText(ctx, "docs", inferhub.TextDocument{ID: "d1", Text: "..."})
+if err == nil && result.Status == "partial" {
+	fmt.Println("partial:", result.Error) // which node/model refused, not a wasted document
+}
+
+found, err := client.Search(ctx, "docs", inferhub.SearchRequest{Query: "hello"})
+// found.Hits stays in the hub's own wire order — never re-sorted by score. A reranked result
+// routinely puts a lower score above a higher one; sorting "to be tidy" undoes what the caller paid
+// for the rerank to do.
+```
+
+`DocumentChunk.Index` is a **string**, not an int — the hub's chunk metadata is a string map, and
+`Page`, when present, is a real number on the same response. The conformance case
+`chunk-index-is-a-string-not-an-int` exists because a client that gets this backwards fails to
+deserialize the very shape it is supposed to read.
 
 ## Errors
 
@@ -189,16 +267,16 @@ go test ./go/...
 ```
 
 `conformance_test.go` drives the shared corpus at `../conformance/cases.json` — the same file the
-C#, Python and TypeScript runners read. Cases whose `kind` is outside `v0.1.0`'s surface (`probe`,
-the OpenAI dialect, retrieval/ingestion/search/chunks) are skipped by name via `t.Skip`, not
-filtered out of the file — 4 cases covered, 9 skipped, all 13 accounted for.
+C#, Python and TypeScript runners read. Cases whose `kind` is outside this version's surface
+(`probe`, the OpenAI dialect) are skipped by name via `t.Skip`, not filtered out of the file —
+7 cases covered, 6 skipped, all 13 accounted for (the same split js/v0.2.0 reached over the
+identical corpus).
 
-Verified with Go 1.23.4 (portable install, no admin rights available in the authoring environment):
-`go build ./...` and `go vet ./...` clean, `gofmt -l .` clean (two files needed reformatting —
-applied), `go test ./...` green — 22 unit tests pass, conformance runner at 4 pass / 9 named-skip /
-13 accounted for. Not run: an example against a real hub (none reachable from this environment) and
-`go get` from the module proxy (needs a pushed public tag) — both remain open release-checklist
-items.
+Verified with a portable Go 1.23.4 install: `go build ./...` and `go vet ./...` clean, `gofmt -l .`
+clean, `go test ./...` green — unit tests plus the conformance runner at 7 pass / 6 named-skip /
+13 accounted for, including the three cases this version newly covers
+(`partial-ingest-is-a-500-with-a-body-not-thrown`, `reranked-search-order-contradicts-its-own-
+scores`, `chunk-index-is-a-string-not-an-int`).
 
 ## License
 
