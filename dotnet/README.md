@@ -15,6 +15,11 @@ TypeScript and Go are planned; see the repository README for what each covers to
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
 
+> **v1.8.0** — **text jobs** (hub v3.103+): `IInferHubJobsClient` submits a chat or a generate to
+> `/api/jobs`, follows its status — the stage, the node and its own reports, pieces, and for a model
+> split across nodes each member's load — over server-sent events or a poll, reads the answer (the
+> text so far while it runs), and cancels. A new interface beside the others; nothing published changed.
+>
 > **v1.7.1** — **patch**: `NodeStatusResponse.Retrieval.Rerank` was typed `bool?` in 1.7.0; a real
 > solo node's `/api/status` sends it as a string (`"none"`/`"llm"`, the config-level rerank mode),
 > which threw a `JsonException` reading `ProbeAsync`'s result. Found by installing 1.7.0 from
@@ -863,6 +868,54 @@ var doc = record.Payload.As<Doc>();
 upsert.WithPayload(doc, MyJsonContext.Default.Doc);
 var doc2 = record.Payload.As(MyJsonContext.Default.Doc);
 ```
+
+## Text jobs (v1.8.0)
+
+A chat that takes minutes — a big model, a model split across several nodes, a full fleet — does
+not have to be one held connection. Submit it as a **job**: the hub answers at once with an id,
+runs the request the way `/api/chat` would, and keeps a status that the caller, the node running it
+and the hub all update. **Hub v3.103+, hub only** — a solo node has no `/api/jobs`.
+
+A status is `queued` · `running` · `succeeded` · `failed` · `cancelled`, with a stage (`waiting`,
+`sent`, `preparing`, `generating`, `done`), the node and when it last reported, pieces so far, and
+exact tokens at the end. For a split model it also carries the group: each member's layers and how
+much of its share has been sent to it. It never carries the request or the answer.
+
+What a job does that the blocking call does not: it **waits out a `503`** (a full fleet, a group
+reassembling) instead of answering it, it has **its own, longer deadline** on the hub, and its
+answer can be read **after a reconnect** — the result while it runs is the text so far, not done.
+Everything is in the hub's memory: a finished job stays ten minutes by default and a hub restart
+loses every job.
+
+```csharp
+var jobs = provider.GetRequiredService<IInferHubJobsClient>();
+
+var job = await jobs.SubmitAsync(new ChatRequest
+{
+    Model = "wizardlm-70b-split",
+    Messages = [new ChatMessage { Role = "user", Content = "…" }]
+});
+
+await foreach (var status in jobs.WatchAsync(job.Id))        // server-sent events, one per change
+{
+    Console.WriteLine(status.Group?.LoadedFraction is { } loaded
+        ? $"{status.Stage}: group {loaded:P0} loaded"
+        : $"{status.Stage} {status.Pieces} {status.Node?.Name}");
+}
+
+var result = await jobs.GetResultAsync(job.Id);              // throws the job's own error if it failed
+Console.WriteLine(result.Text);
+```
+
+| Method | Route |
+|---|---|
+| `SubmitAsync(ChatRequest)` / `SubmitAsync(GenerateRequest)` | `POST /api/jobs` — returns the status at once; never retried |
+| `GetAsync` | `GET /api/jobs/{id}` (→ `null` on 404) |
+| `ListAsync` | `GET /api/jobs` — this client's jobs |
+| `WatchAsync` | `GET /api/jobs/{id}/events` (SSE → `IAsyncEnumerable<Job>`, ends at the terminal one) |
+| `WaitAsync` | polls `GetAsync` until finished |
+| `GetResultAsync` | `GET /api/jobs/{id}/result` — `Done == false` with the text so far while it runs |
+| `CancelAsync` | `DELETE /api/jobs/{id}` — cancels a running job, drops a finished one (`null`) |
 
 ## Versioning
 

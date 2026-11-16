@@ -5,6 +5,16 @@ export { InferHubClient } from "./client.js";
 export { InferHubError, InferHubOpenAiException, InferHubRetrievalException } from "./errors.js";
 export { VideoErrorCodes } from "./types.js";
 export type {
+  Job,
+  JobError,
+  JobGroup,
+  JobGroupMember,
+  JobNode,
+  JobResult,
+  JobStatus,
+  WaitForJobOptions,
+} from "./_jobs.js";
+export type {
   AdminEvent,
   AdminNode,
   ChatMessage,

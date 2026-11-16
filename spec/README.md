@@ -42,6 +42,11 @@ Legend: **✓** served · **—** not served · *(auth)* which key opens it.
 | `GET /api/collections/{c}/documents/{id}/chunks` | ✓ | ✓ | |
 | `POST /api/collections/{c}/search` | ✓ | ✓ | `mode`, `k`, `rerank`, `model` and `embeddingModel` are **body fields**. This route reads no `X-InferHub-*` header at all |
 | `POST /api/tools/{capability}` | ✓ | ✓ | the capability seam — STT, TTS and the rest |
+| `POST /api/jobs` | ✓ | — | **hub only, v3.103+** — a chat or a generate as a job: `{kind, request}` → `202` + the status. `queued → running → succeeded\|failed\|cancelled` |
+| `GET /api/jobs`, `GET /api/jobs/{id}` | ✓ | — | this client's jobs; another client's id is the same `404` as none. The status has no request and no answer |
+| `GET /api/jobs/{id}/events` | ✓ | — | SSE, `event: status`, one frame per change (two a second at most), ends after the terminal one; `: waiting` comments keep it open |
+| `GET /api/jobs/{id}/result` | ✓ | — | `200` the answer `/api/chat` would have given · **`202` the text so far, `done:false`** · the job's own error status if it failed · `409` if cancelled |
+| `DELETE /api/jobs/{id}` | ✓ | — | running → `202` + the status (cancelled); finished → `204`, dropped now |
 | `POST /api/images/jobs` | ✓ | ✓ | async: `queued → running → succeeded\|failed\|cancelled` |
 | `GET /api/images/jobs/{id}` | ✓ | ✓ | |
 | `GET /api/images/jobs/{id}/events` | ✓ | ✓ | SSE progress |

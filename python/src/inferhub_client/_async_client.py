@@ -16,6 +16,7 @@ from ._base import (
 )
 from ._corpus import _AsyncCorpusMethodsMixin
 from ._exceptions import InferHubError
+from ._jobs import _AsyncJobMethodsMixin
 from ._media import _AsyncMediaMethodsMixin
 from ._models import (
     ChatRequest,
@@ -37,7 +38,10 @@ from ._models import (
 
 
 class AsyncInferHubClient(
-    _AsyncCorpusMethodsMixin, _AsyncMediaMethodsMixin, _AsyncAdminMethodsMixin
+    _AsyncCorpusMethodsMixin,
+    _AsyncMediaMethodsMixin,
+    _AsyncAdminMethodsMixin,
+    _AsyncJobMethodsMixin,
 ):
     """Async client for an InferHub coordinator (or a solo node — same address, same client, see
     ``python/README.md``). Covers the Ollama-dialect core surface (chat, generate, embeddings,

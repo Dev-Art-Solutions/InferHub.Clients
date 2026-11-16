@@ -5,10 +5,10 @@ Ollama-compatible inference mesh. One repository, one hub surface, a client per 
 
 | Language | Package | Version | Status |
 |---|---|---|---|
-| **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.7.1` | shipping |
-| **Python** — [`python/`](python/) | [`inferhub-client`](https://pypi.org/project/inferhub-client/) on PyPI | `1.0.0` | shipping (core, retrieval, audio, images, admin, node) |
-| **TypeScript** — [`js/`](js/) | [`inferhub-client`](https://www.npmjs.com/package/inferhub-client) on npm | `1.0.0` | shipping (core, retrieval, audio, images, admin, node) |
-| **Go** — [`go/`](go/) | [`github.com/Dev-Art-Solutions/InferHub.Clients/go`](https://pkg.go.dev/github.com/Dev-Art-Solutions/InferHub.Clients/go) | `1.0.0` | shipping (core, retrieval, audio, images, admin, node) |
+| **C#** — [`dotnet/`](dotnet/) | [`InferHub.Client`](https://www.nuget.org/packages/InferHub.Client/) on NuGet | `1.8.0` | shipping |
+| **Python** — [`python/`](python/) | [`inferhub-client`](https://pypi.org/project/inferhub-client/) on PyPI | `1.1.0` | shipping (core, retrieval, audio, images, admin, node) |
+| **TypeScript** — [`js/`](js/) | [`inferhub-client`](https://www.npmjs.com/package/inferhub-client) on npm | `1.1.0` | shipping (core, retrieval, audio, images, admin, node) |
+| **Go** — [`go/`](go/) | [`github.com/Dev-Art-Solutions/InferHub.Clients/go`](https://pkg.go.dev/github.com/Dev-Art-Solutions/InferHub.Clients/go) | `1.1.0` | shipping (core, retrieval, audio, images, admin, node) |
 
 Every client talks to the same HTTP surface, and **a node is a base address, not a different
 client**: a solo InferHub node serves the same paths with the same bodies as a coordinator, so
@@ -22,6 +22,7 @@ Empty columns are the honest state, not an oversight — each one names the phas
 |---|---|---|---|---|
 | Chat & generate, blocking | ✓ | ✓ | ✓ | ✓ |
 | Chat & generate, streaming | ✓ | ✓ | ✓ | ✓ |
+| Chat & generate as a job you follow (`/api/jobs`, hub v3.103+) | ✓ | ✓ | ✓ | ✓ |
 | Embeddings (batch + legacy) | ✓ | ✓ | ✓ | ✓ |
 | Vector data plane (upsert/query/retrieve) | ✓ | ✓ | ✓ | ✓ |
 | RAG retrieval, with source ids | ✓ | ✓ | ✓ | ✓ |

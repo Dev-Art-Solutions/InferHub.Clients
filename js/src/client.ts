@@ -16,6 +16,8 @@ import {
 } from "./_base.js";
 import * as admin from "./_admin.js";
 import * as corpus from "./_corpus.js";
+import * as jobs from "./_jobs.js";
+import type { Job, JobResult, WaitForJobOptions } from "./_jobs.js";
 import * as media from "./_media.js";
 import { readNdjsonLines } from "./_stream.js";
 import { InferHubError } from "./errors.js";
@@ -514,6 +516,60 @@ export class InferHubClient {
     if (response.status === 404) return false;
     await raiseForStatus(response);
     return response.ok;
+  }
+
+  // -- Text jobs (js/v1.1.0, hub v3.103+) ------------------------------------------------------
+  // Thin wrappers over ./_jobs.ts. Hub only: a solo node has no /api/jobs.
+
+  /** `POST /api/jobs` with a chat. Resolves at once (`202`) with the job's status. */
+  submitChatJob(request: ChatRequest): Promise<Job> {
+    return jobs.submitJob(this.request.bind(this), "chat", chatRequestToJson(request, true));
+  }
+
+  /** `POST /api/jobs` with a generate. */
+  submitGenerateJob(request: GenerateRequest): Promise<Job> {
+    return jobs.submitJob(this.request.bind(this), "generate", generateRequestToJson(request, true));
+  }
+
+  /** `GET /api/jobs/{id}`. `undefined` for an id the hub does not hold for this client. */
+  getJob(id: string): Promise<Job | undefined> {
+    return jobs.getJob(this.request.bind(this), id);
+  }
+
+  /** `GET /api/jobs` — this client's jobs, newest first. */
+  listJobs(): Promise<Job[]> {
+    return jobs.listJobs(this.request.bind(this));
+  }
+
+  /** `GET /api/jobs/{id}/result`. `done: false` with the text so far while the job runs; throws
+   * the job's own error for a failed job and a 409 for a cancelled one. */
+  async getJobResult(id: string): Promise<JobResult> {
+    const { done, servedBy, raw } = await jobs.getJobResultRaw(this.request.bind(this), id);
+    if ("message" in raw) {
+      const chat = chatResponseFromJson(raw);
+      chat.servedBy = servedBy;
+      return { done, chat, text: chat.message?.content ?? "", servedBy, raw };
+    }
+    const generate = generateResponseFromJson(raw);
+    generate.servedBy = servedBy;
+    return { done, generate, text: generate.response ?? "", servedBy, raw };
+  }
+
+  /** `DELETE /api/jobs/{id}`. A running job is cancelled (the node is told to stop) and its status
+   * returned; a finished one is dropped now and `undefined` returned. */
+  cancelJob(id: string): Promise<Job | undefined> {
+    return jobs.cancelJob(this.request.bind(this), id);
+  }
+
+  /** `GET /api/jobs/{id}/events` — yields the status each time it changes and ends after the
+   * terminal one. Use {@link waitForJob} where a proxy buffers server-sent events. */
+  watchJob(id: string): AsyncGenerator<Job> {
+    return jobs.watchJob(this.request.bind(this), id);
+  }
+
+  /** Polls the status until the job is finished and resolves with it. */
+  waitForJob(id: string, options?: WaitForJobOptions): Promise<Job> {
+    return jobs.waitForJob(this.request.bind(this), id, options);
   }
 
   // -- Ingestion and search (js/v0.2.0) --------------------------------------------------------

@@ -16,6 +16,7 @@ from ._base import (
 )
 from ._corpus import _CorpusMethodsMixin
 from ._exceptions import InferHubError
+from ._jobs import _JobMethodsMixin
 from ._media import _MediaMethodsMixin
 from ._models import (
     ChatRequest,
@@ -36,7 +37,9 @@ from ._models import (
 )
 
 
-class InferHubClient(_CorpusMethodsMixin, _MediaMethodsMixin, _AdminMethodsMixin):
+class InferHubClient(
+    _CorpusMethodsMixin, _MediaMethodsMixin, _AdminMethodsMixin, _JobMethodsMixin
+):
     """Sync client for an InferHub coordinator (or a solo node — same address, same client, see
     ``python/README.md``). A thin façade over the same rules :class:`AsyncInferHubClient` uses
     (``_base.py``), for callers not already in an event loop. Covers the Ollama-dialect core

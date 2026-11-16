@@ -114,6 +114,16 @@ public static class InferHubClientServiceCollectionExtensions
         .AddHttpMessageHandler<TransientRetryHandler>()
         .AddHttpMessageHandler<BearerAuthorizationHandler>();
 
+        // Text jobs share the address, the client key and the handler chain. Infinite here because
+        // the status stream lives as long as the job does; Options.Timeout governs the short calls.
+        services.AddHttpClient<IInferHubJobsClient, InferHubJobsClient>(client =>
+        {
+            client.BaseAddress = EnsureTrailingSlash(options.BaseAddress);
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        })
+        .AddHttpMessageHandler<TransientRetryHandler>()
+        .AddHttpMessageHandler<BearerAuthorizationHandler>();
+
         services.AddHttpClient<IInferHubAdminClient, InferHubAdminClient>(client =>
         {
             client.BaseAddress = EnsureTrailingSlash(options.BaseAddress);

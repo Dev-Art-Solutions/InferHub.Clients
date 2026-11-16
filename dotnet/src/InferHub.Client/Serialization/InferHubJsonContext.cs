@@ -5,6 +5,7 @@ using InferHub.Client.Models.Admin;
 using InferHub.Client.Models.Audio;
 using InferHub.Client.Models.Corpus;
 using InferHub.Client.Models.Images;
+using InferHub.Client.Models.Jobs;
 using InferHub.Client.Models.Node;
 using InferHub.Client.Models.Ollama;
 using InferHub.Client.Models.OpenAi;
@@ -99,6 +100,10 @@ namespace InferHub.Client.Serialization;
 [JsonSerializable(typeof(NodeCreateCollectionRequest))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(Job))]
+[JsonSerializable(typeof(JobList))]
+[JsonSerializable(typeof(ChatJobSubmission))]
+[JsonSerializable(typeof(GenerateJobSubmission))]
 [JsonSerializable(typeof(string[]))]
 internal sealed partial class InferHubJsonContext : JsonSerializerContext
 {

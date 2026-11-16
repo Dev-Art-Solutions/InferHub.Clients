@@ -13,6 +13,7 @@ from ._exceptions import (
     InferHubOpenAiException,
     InferHubRetrievalException,
 )
+from ._jobs import Job, JobError, JobGroup, JobGroupMember, JobNode, JobResult
 from ._models import (
     AdminEvent,
     AdminNode,
@@ -150,4 +151,11 @@ __all__ = [
     "NodeStatusResponse",
     "InferHubTargetProbe",
     "VideoErrorCodes",
+    # Text jobs (hub v3.103+)
+    "Job",
+    "JobNode",
+    "JobGroup",
+    "JobGroupMember",
+    "JobError",
+    "JobResult",
 ]

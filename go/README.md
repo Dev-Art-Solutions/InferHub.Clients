@@ -137,6 +137,56 @@ nothing to leak if a caller stops iterating early. A terminal error chunk
 (`{"error": "...", "done": true}`) surfaces from `Next`/`Err` instead of the loop hanging or ending
 quietly with a partial answer nobody was told about.
 
+## Text jobs (v1.1.0)
+
+A chat that takes minutes — a big model, a model split across several nodes, a full fleet — does
+not have to be one held connection. Submit it as a **job**: the hub answers at once with an id,
+runs the request the way `/api/chat` would, and keeps a status that the caller, the node running it
+and the hub all update. **Hub v3.103+, hub only** — a solo node has no `/api/jobs`.
+
+A status is `queued` · `running` · `succeeded` · `failed` · `cancelled`, with a stage (`waiting`,
+`sent`, `preparing`, `generating`, `done`), the node and when it last reported, pieces so far, and
+exact tokens at the end. For a split model it also carries the group: each member's layers and how
+much of its share has been sent to it. It never carries the request or the answer.
+
+What a job does that the blocking call does not: it **waits out a `503`** (a full fleet, a group
+reassembling) instead of answering it, it has **its own, longer deadline** on the hub, and its
+answer can be read **after a reconnect** — the result while it runs is the text so far, not done.
+Everything is in the hub's memory: a finished job stays ten minutes by default and a hub restart
+loses every job.
+
+```go
+job, err := client.SubmitChatJob(ctx, inferhub.ChatRequest{
+    Model: "wizardlm-70b-split", Messages: []inferhub.ChatMessage{{Role: "user", Content: "…"}},
+})
+
+events, err := client.WatchJob(ctx, job.ID) // server-sent events, one per change
+defer events.Close()
+for events.Next() {
+    status := events.Value()
+    if status.Group != nil {
+        if loaded, ok := status.Group.LoadedFraction(); ok {
+            fmt.Printf("%s: group %.0f%% loaded\n", status.Stage, loaded*100)
+            continue
+        }
+    }
+    fmt.Println(status.Stage, status.Pieces)
+}
+
+result, err := client.GetJobResult(ctx, job.ID) // the job's own error if it failed
+fmt.Println(result.Text())
+```
+
+| Method | Route |
+|---|---|
+| `SubmitChatJob(ctx, request)` / `SubmitGenerateJob(ctx, request)` | `POST /api/jobs` — returns the status at once |
+| `GetJob(ctx, id)` | `GET /api/jobs/{id}` — `(Job{}, false, nil)` on 404 |
+| `ListJobs(ctx)` | `GET /api/jobs` — this client's jobs |
+| `WatchJob(ctx, id)` | `GET /api/jobs/{id}/events` — a `*JobEvents` iterator, ends at the terminal one |
+| `WaitForJob(ctx, id, pollInterval)` | polls `GetJob` until finished; the context bounds the wait |
+| `GetJobResult(ctx, id)` | `GET /api/jobs/{id}/result` — `Done == false` with the text so far while it runs |
+| `CancelJob(ctx, id)` | `DELETE /api/jobs/{id}` — cancels a running job, drops a finished one (`false`) |
+
 ## Retrieval
 
 `RetrievalOptions` is a **trailing, variadic parameter** on `Chat`/`ChatStream`/`Generate`/

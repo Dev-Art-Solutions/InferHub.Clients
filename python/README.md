@@ -184,6 +184,49 @@ OpenAI one), so it surfaces as `InferHubError`, same as the core surface.
 is no built-in reconnect-with-backoff — a caller who wants one wraps the generator in their own
 retry loop, keeping the backoff policy a caller decision.
 
+## Text jobs (v1.1.0)
+
+A chat that takes minutes — a big model, a model split across several nodes, a full fleet — does
+not have to be one held connection. Submit it as a **job**: the hub answers at once with an id,
+runs the request the way `/api/chat` would, and keeps a status that the caller, the node running it
+and the hub all update. **Hub v3.103+, hub only** — a solo node has no `/api/jobs`.
+
+A status is `queued` · `running` · `succeeded` · `failed` · `cancelled`, with a stage (`waiting`,
+`sent`, `preparing`, `generating`, `done`), the node and when it last reported, pieces so far, and
+exact tokens at the end. For a split model it also carries the group: each member's layers and how
+much of its share has been sent to it. It never carries the request or the answer.
+
+What a job does that the blocking call does not: it **waits out a `503`** (a full fleet, a group
+reassembling) instead of answering it, it has **its own, longer deadline** on the hub, and its
+answer can be read **after a reconnect** — the result while it runs is the text so far, not done.
+Everything is in the hub's memory: a finished job stays ten minutes by default and a hub restart
+loses every job.
+
+```python
+job = client.submit_chat_job(ChatRequest(model="wizardlm-70b-split", messages=[ChatMessage("user", "…")]))
+
+for status in client.watch_job(job.id):          # server-sent events, one per change
+    if status.group and status.group.loaded_fraction is not None:
+        print(f"{status.stage}: group {status.group.loaded_fraction:.0%} loaded")
+    else:
+        print(status.stage, status.pieces, status.node.name if status.node else "")
+
+result = client.get_job_result(job.id)           # raises the job's own error if it failed
+print(result.text)
+```
+
+| Method | Route |
+|---|---|
+| `submit_chat_job(request)` / `submit_generate_job(request)` | `POST /api/jobs` — returns the status at once |
+| `get_job(id)` | `GET /api/jobs/{id}` — `None` on 404 |
+| `list_jobs()` | `GET /api/jobs` — this client's jobs |
+| `watch_job(id)` | `GET /api/jobs/{id}/events` — an iterator of `Job`, ends at the terminal one |
+| `wait_for_job(id, poll_interval=1.0, timeout=None)` | polls `get_job` until finished |
+| `get_job_result(id)` | `GET /api/jobs/{id}/result` — `done=False` with the text so far while it runs |
+| `cancel_job(id)` | `DELETE /api/jobs/{id}` — cancels a running job, drops a finished one (`None`) |
+
+The async client has the same seven, awaited; `watch_job` is an async iterator.
+
 ## Retrieval (v0.2.0)
 
 ```python

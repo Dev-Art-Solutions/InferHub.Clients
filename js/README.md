@@ -77,6 +77,46 @@ Python client, which needs two classes because Python has two incompatible calli
 The OpenAI chat dialect (`/v1/chat/completions`) stays dotnet-only per the polyglot-clients track's
 own design decision — no method here reaches it.
 
+## Text jobs (v1.1.0)
+
+A chat that takes minutes — a big model, a model split across several nodes, a full fleet — does
+not have to be one held connection. Submit it as a **job**: the hub answers at once with an id,
+runs the request the way `/api/chat` would, and keeps a status that the caller, the node running it
+and the hub all update. **Hub v3.103+, hub only** — a solo node has no `/api/jobs`.
+
+A status is `queued` · `running` · `succeeded` · `failed` · `cancelled`, with a stage (`waiting`,
+`sent`, `preparing`, `generating`, `done`), the node and when it last reported, pieces so far, and
+exact tokens at the end. For a split model it also carries the group: each member's layers and how
+much of its share has been sent to it. It never carries the request or the answer.
+
+What a job does that the blocking call does not: it **waits out a `503`** (a full fleet, a group
+reassembling) instead of answering it, it has **its own, longer deadline** on the hub, and its
+answer can be read **after a reconnect** — the result while it runs is the text so far, not done.
+Everything is in the hub's memory: a finished job stays ten minutes by default and a hub restart
+loses every job.
+
+```ts
+const job = await client.submitChatJob({ model: "wizardlm-70b-split", messages: [{ role: "user", content: "…" }] });
+
+for await (const status of client.watchJob(job.id)) {      // server-sent events, one per change
+  const loaded = status.group?.loadedFraction;
+  console.log(status.stage, loaded !== undefined ? `group ${Math.round(loaded * 100)}% loaded` : status.pieces);
+}
+
+const result = await client.getJobResult(job.id);          // throws the job's own error if it failed
+console.log(result.text);
+```
+
+| Method | Route |
+|---|---|
+| `submitChatJob(request)` / `submitGenerateJob(request)` | `POST /api/jobs` — resolves with the status at once |
+| `getJob(id)` | `GET /api/jobs/{id}` — `undefined` on 404 |
+| `listJobs()` | `GET /api/jobs` — this client's jobs |
+| `watchJob(id)` | `GET /api/jobs/{id}/events` — an async generator of `Job`, ends at the terminal one |
+| `waitForJob(id, { pollIntervalMs, timeoutMs, signal })` | polls `getJob` until finished |
+| `getJobResult(id)` | `GET /api/jobs/{id}/result` — `done: false` with the text so far while it runs |
+| `cancelJob(id)` | `DELETE /api/jobs/{id}` — cancels a running job, drops a finished one (`undefined`) |
+
 ## Retrieval
 
 `RetrievalOptions` is a second, optional argument to `chat`/`chatStream`/`generate`/
