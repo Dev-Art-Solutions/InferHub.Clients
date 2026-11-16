@@ -12,7 +12,13 @@ on:
   push:
     tags:
       - 'dotnet/v*'
+  # Run by hand for a version whose tag already exists (the tag's own copy of this file is the one a
+  # tag push or a rerun uses, so a fix to the workflow reaches an existing tag only this way).
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, without the prefix (e.g. 1.8.1). The tag dotnet/v<version> must exist.'
+        required: true
 
 jobs:
   release:
@@ -20,6 +26,7 @@ jobs:
     environment: Action
     permissions:
       contents: write
+      id-token: write   # nuget.org Trusted Publishing: the job proves who it is with a GitHub OIDC token
 
     steps:
       - uses: actions/checkout@v7
@@ -32,8 +39,12 @@ jobs:
       - name: Resolve version from tag
         id: version
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG#dotnet/v}"
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG#dotnet/v}"
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Restore
@@ -45,11 +56,23 @@ jobs:
       - name: Pack
         run: dotnet pack dotnet/src/InferHub.Client/InferHub.Client.csproj --configuration Release --no-build --output ./nupkgs /p:Version=${{ steps.version.outputs.version }}
 
+      # nuget.org no longer takes a long-lived API key from this repository. The job exchanges its
+      # GitHub OIDC token for a key that lives one hour, under the trusted publishing policy set on
+      # nuget.org for: owner Dev-Art-Solutions, repository InferHub.Clients, workflow file
+      # dotnet-release.yml, environment Action. `user` is the nuget.org profile name that owns the
+      # package, not an email.
+      - name: NuGet login (OIDC, temporary key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER || 'iovigi' }}
+
       - name: Push to NuGet
-        run: dotnet nuget push "./nupkgs/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "./nupkgs/*.nupkg" --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: dotnet/v${{ steps.version.outputs.version }}
           files: ./nupkgs/*.nupkg
           generate_release_notes: true
