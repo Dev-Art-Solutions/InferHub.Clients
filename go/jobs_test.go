@@ -127,6 +127,11 @@ func TestASplitModelsJobSaysHowFarEachMemberIs(t *testing.T) {
 	if !ok || fraction < 0.736 || fraction > 0.737 {
 		t.Errorf("LoadedFraction = %v, %v", fraction, ok)
 	}
+	// Found against a real group: once it runs, the count says nothing about a load.
+	job.Group.State = "running"
+	if _, ok := job.Group.LoadedFraction(); ok {
+		t.Errorf("LoadedFraction of a running group should not be ok")
+	}
 	if !strings.HasPrefix(job.Detail, "group starting") {
 		t.Errorf("detail = %q", job.Detail)
 	}

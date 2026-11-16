@@ -112,6 +112,12 @@ describe("text jobs", () => {
     expect(job?.group?.members[0]?.expectMiB).toBeUndefined();
     expect(job?.group?.members[1]?.sentMiB).toBe(9210);
     expect(job?.group?.loadedFraction).toBeCloseTo(18420 / 25022, 5);
+
+    // Found against a real group: once it runs, the count says nothing about a load.
+    const running = await clientWith(
+      vi.fn(async () => response(GROUP.replace('"state":"starting"', '"state":"running"'))),
+    ).getJob(ID);
+    expect(running?.group?.loadedFraction).toBeUndefined();
   });
 
   it("an unknown job is undefined, not an error", async () => {

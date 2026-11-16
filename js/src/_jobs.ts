@@ -41,7 +41,9 @@ export interface JobGroup {
   state?: string;
   why?: string;
   members: JobGroupMember[];
-  /** How much of the members' shares has been sent, 0–1; `undefined` when the group does not say. */
+  /** How much of the members' shares has been sent, 0–1, while the group is coming up. `undefined`
+   * once the group runs (a member that kept its layers from an earlier load is sent only a part of
+   * its share, so the number means nothing then) and when the group does not say. */
   loadedFraction?: number;
 }
 
@@ -131,7 +133,7 @@ function groupFromJson(data: JsonDict): JobGroup {
     state: data.state as string | undefined,
     why: data.why as string | undefined,
     members,
-    loadedFraction: expect > 0 ? sent / expect : undefined,
+    loadedFraction: expect > 0 && data.state !== "running" ? sent / expect : undefined,
   };
 }
 

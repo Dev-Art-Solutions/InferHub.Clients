@@ -92,8 +92,12 @@ class JobGroup:
 
     @property
     def loaded_fraction(self) -> Optional[float]:
-        """How much of the members' shares has been sent, 0–1, or ``None`` when the group does
-        not say (it is running, or its head is older than v3.102)."""
+        """How much of the members' shares has been sent, 0–1, while the group is coming up.
+        ``None`` once the group runs (a member that kept its layers from an earlier load is sent
+        only a part of its share, so the number means nothing then) and when the group does not
+        say (its head is older than v3.102). For the same reason it can stop short of 1."""
+        if self.state == "running":
+            return None
         expect = sum(m.expect_mib or 0 for m in self.members)
         if expect <= 0:
             return None

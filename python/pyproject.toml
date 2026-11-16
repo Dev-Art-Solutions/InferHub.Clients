@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "inferhub-client"
-version = "1.1.0"
+version = "1.1.1"
 description = "A small, typed Python client for InferHub — a self-hosted, Ollama-compatible inference mesh."
 readme = "README.md"
 license = "MIT"

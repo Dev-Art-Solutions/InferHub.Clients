@@ -45,9 +45,14 @@ type JobGroup struct {
 	Members []JobGroupMember `json:"members"`
 }
 
-// LoadedFraction is how much of the members' shares has been sent, 0–1; ok is false when the group
-// does not say (it is running, or its head is older than v3.102).
+// LoadedFraction is how much of the members' shares has been sent, 0–1, while the group is coming
+// up. ok is false once the group runs (a member that kept its layers from an earlier load is sent
+// only a part of its share, so the number means nothing then) and when the group does not say (its
+// head is older than v3.102). For the same reason it can stop short of 1.
 func (g JobGroup) LoadedFraction() (fraction float64, ok bool) {
+	if g.State == "running" {
+		return 0, false
+	}
 	var expect, sent int64
 	for _, m := range g.Members {
 		if m.ExpectMiB == nil {

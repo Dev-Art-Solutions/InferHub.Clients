@@ -32,3 +32,7 @@ its own longer deadline on the hub, and its answer can be read after the caller 
 
 - Hub only: a solo node has no `/api/jobs`, and a submit there raises its 404.
 - A hub restart loses every job; a waiter then gets a 404. Not run.
+
+## Not on NuGet
+
+The release workflow built and packed 1.8.0 and NuGet refused the push: the repository's API key has expired. 1.8.0 was never published. 1.8.1 carries the same surface plus the fix below and is published once the key is renewed.

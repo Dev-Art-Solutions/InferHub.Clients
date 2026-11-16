@@ -128,6 +128,9 @@ def test_a_split_models_status_says_how_far_each_member_is():
     assert job.group.members[0].expect_mib is None
     assert job.group.members[1].sent_mib == 9210
     assert round(job.group.loaded_fraction, 3) == round(18420 / 25022, 3)
+    # Found against a real group: once it runs, the count says nothing about a load.
+    job.group.state = "running"
+    assert job.group.loaded_fraction is None
 
 
 def test_an_unknown_job_is_none_not_an_error():

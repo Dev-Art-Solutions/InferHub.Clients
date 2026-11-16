@@ -15,7 +15,7 @@ TypeScript and Go are planned; see the repository README for what each covers to
 Point it at a coordinator, pass a Bearer token, and call chat, generate, model listing
 and status from C# with typed requests, dependency injection, and no heavy dependencies.
 
-> **v1.8.0** — **text jobs** (hub v3.103+): `IInferHubJobsClient` submits a chat or a generate to
+> **v1.8.1** — **text jobs** (hub v3.103+): `IInferHubJobsClient` submits a chat or a generate to
 > `/api/jobs`, follows its status — the stage, the node and its own reports, pieces, and for a model
 > split across nodes each member's load — over server-sent events or a poll, reads the answer (the
 > text so far while it runs), and cancels. A new interface beside the others; nothing published changed.
@@ -869,7 +869,7 @@ upsert.WithPayload(doc, MyJsonContext.Default.Doc);
 var doc2 = record.Payload.As(MyJsonContext.Default.Doc);
 ```
 
-## Text jobs (v1.8.0)
+## Text jobs (v1.8.1)
 
 A chat that takes minutes — a big model, a model split across several nodes, a full fleet — does
 not have to be one held connection. Submit it as a **job**: the hub answers at once with an id,

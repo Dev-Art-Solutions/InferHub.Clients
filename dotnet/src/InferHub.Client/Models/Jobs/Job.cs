@@ -149,14 +149,21 @@ public sealed class JobGroup
     public IReadOnlyList<JobGroupMember> Members { get; set; } = [];
 
     /// <summary>
-    /// How much of the members' shares of the model has been sent, 0–1; <c>null</c> when the group
-    /// does not say (it is running, or its head is older than v3.102).
+    /// How much of the members' shares of the model has been sent, 0–1, while the group is coming up.
+    /// <c>null</c> once the group runs — a member that kept its layers from an earlier load is sent
+    /// only a part of its share, so the number means nothing then — and when the group does not say
+    /// (its head is older than v3.102). For the same reason it can stop short of 1.
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public double? LoadedFraction
     {
         get
         {
+            if (State == "running")
+            {
+                return null;
+            }
+
             long expect = 0, sent = 0;
 
             foreach (var member in Members)

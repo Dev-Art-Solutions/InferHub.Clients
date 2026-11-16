@@ -32,3 +32,7 @@ its own longer deadline on the hub, and its answer can be read after the caller 
 
 - Hub only: a solo node has no `/api/jobs`, and a submit there raises its 404.
 - A hub restart loses every job; a waiter then gets a 404. Not run.
+
+## Verified from the registry
+
+Installed from the public registry into a clean directory and run against the published InferHub 3.103.0 images (one coordinator, an 8B model split across three node containers): submit, the status stream (the head as the node, the group with its three members), the wait, the answer ("Hello, how are you today?", 8 tokens, served by `node`), the listing, and dropping the finished job. That run found the one defect fixed in the patch release that followed.

@@ -1,6 +1,6 @@
 {
   "name": "inferhub-client",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Client for InferHub, a self-hosted, Ollama-compatible inference mesh — chat, generate, embeddings, retrieval/RAG, ingestion/search, audio, images, the admin plane and the node (1.0).",
   "type": "module",
   "license": "MIT",

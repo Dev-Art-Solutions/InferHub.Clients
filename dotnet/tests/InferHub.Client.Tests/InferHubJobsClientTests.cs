@@ -133,6 +133,10 @@ public class InferHubJobsClientTests
         Assert.Null(job.Group.Members[0].ExpectMiB);
         Assert.Equal(9210, job.Group.Members[1].SentMiB);
         Assert.Equal(18420d / 25022d, job.Group.LoadedFraction!.Value, 6);
+
+        // Found against a real group: once it runs, the count says nothing about a load.
+        job.Group.State = "running";
+        Assert.Null(job.Group.LoadedFraction);
     }
 
     [Fact]
